@@ -17,7 +17,7 @@ from pathlib import Path
 
 VALID_IMAGE_MODES = {"disabled", "prompts-only", "enabled"}
 DEFAULT_MODEL = "google/gemma-4-31b-it"
-DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_BASE_URL = "https://api.novita.ai/v3/openai"
 
 
 def _load_agent_env(repo_root: Path) -> Path | None:
@@ -26,7 +26,7 @@ def _load_agent_env(repo_root: Path) -> Path | None:
         repo_root / ".env",
         Path.home() / ".ppt-master" / ".env",
     ]
-    prefixes = ("OPENROUTER_", "PPT_MASTER_AGENT_", "PPT_MASTER_IMAGE_")
+    prefixes = ("NOVITA_", "OPENROUTER_", "PPT_MASTER_AGENT_", "PPT_MASTER_IMAGE_", "IMAGE_")
     for path in candidates:
         if not path.is_file():
             continue
@@ -72,7 +72,10 @@ class AgentConfig:
                 f"PPT_MASTER_IMAGE_GENERATION must be one of: {choices}"
             )
         return cls(
-            api_key=os.environ.get("OPENROUTER_API_KEY", "").strip(),
+            api_key=(
+                os.environ.get("NOVITA_API_KEY", "").strip()
+                or os.environ.get("OPENROUTER_API_KEY", "").strip()
+            ),
             model=os.environ.get(
                 "PPT_MASTER_AGENT_MODEL",
                 DEFAULT_MODEL,
@@ -97,6 +100,6 @@ class AgentConfig:
     def require_api_key(self) -> None:
         if not self.api_key:
             raise RuntimeError(
-                "OPENROUTER_API_KEY is not set. Add it to the process "
+                "NOVITA_API_KEY is not set. Add it to the process "
                 "environment or an ignored .env file."
             )

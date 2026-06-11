@@ -46,6 +46,7 @@ class OpenRouterClient:
             headers={
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; PPT-Master/1.0)",
                 "HTTP-Referer": "https://github.com/hugohe3/ppt-master",
                 "X-Title": "PPT Master Built-in Agent",
             },
@@ -96,7 +97,6 @@ class OpenRouterClient:
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
             "stream": True,
-            "stream_options": {"include_usage": True},
         }
         request = urllib.request.Request(
             f"{self.config.base_url}/chat/completions",
@@ -104,6 +104,7 @@ class OpenRouterClient:
             headers={
                 "Authorization": f"Bearer {self.config.api_key}",
                 "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (compatible; PPT-Master/1.0)",
                 "HTTP-Referer": "https://github.com/hugohe3/ppt-master",
                 "X-Title": "PPT Master Built-in Agent",
             },
@@ -112,10 +113,17 @@ class OpenRouterClient:
         content_parts: list[str] = []
         tool_calls: dict[int, dict[str, Any]] = {}
         usage: dict[str, Any] = {}
-        with urllib.request.urlopen(
-            request,
-            timeout=self.config.request_timeout,
-        ) as response:
+        try:
+            response_ctx = urllib.request.urlopen(
+                request,
+                timeout=self.config.request_timeout,
+            )
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"LLM HTTP {exc.code}: {redact_text(body[:2000])}"
+            ) from exc
+        with response_ctx as response:
             for raw_line in response:
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line.startswith("data:"):

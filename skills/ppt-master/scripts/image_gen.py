@@ -75,6 +75,7 @@ IMAGE_ENV_PREFIXES = (
     "FAL_",
     "REPLICATE_",
     "OPENROUTER_",
+    "NOVITA_",
 )
 DEPRECATED_IMAGE_KEYS = {
     "IMAGE_API_KEY",
@@ -201,6 +202,14 @@ BACKEND_REGISTRY = {
         "label": "OpenRouter",
         "default_model": "google/gemini-3.1-flash-image-preview",
         "key_hint": "OPENROUTER_API_KEY",
+    },
+    "novita": {
+        "module": "backend_novita",
+        "tier": "core",
+        "label": "Novita AI (Qwen Image)",
+        "default_model": "(API default)",
+        "key_hint": "NOVITA_API_KEY",
+        "aliases": ["novita-ai"],
     },
 }
 
