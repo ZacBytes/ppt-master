@@ -15,6 +15,18 @@ This directory contains user-facing scripts for conversion, project setup, direc
 
 ## Quick Start
 
+Built-in OpenRouter agent:
+
+```bash
+python3 scripts/ppt_agent_web.py
+python3 scripts/ppt_agent.py
+python3 scripts/ppt_agent.py --project ../../../projects/<project_name>
+```
+
+The built-in agent has no web-search, URL-fetching, or web-image-search tools.
+Text-to-image is optional and disabled by default. See
+[Built-in OpenRouter Agent](../../../docs/built-in-agent.md).
+
 Typical end-to-end workflow:
 
 ```bash
@@ -45,6 +57,7 @@ python3 scripts/update_repo.py
 | SVG pipeline | `finalize_svg.py`, `svg_to_pptx.py`, `total_md_split.py`, `svg_quality_checker.py`, `animation_config.py`, `notes_to_audio.py` | [docs/svg-pipeline.md](./docs/svg-pipeline.md) |
 | Spec maintenance | `update_spec.py` | [docs/update_spec.md](./docs/update_spec.md) |
 | Image tools | `image_gen.py`, `latex_render.py`, `analyze_images.py`, `gemini_watermark_remover.py` | [docs/image.md](./docs/image.md) |
+| Built-in agent | `ppt_agent.py`, `agent_runtime/` | [Built-in OpenRouter Agent](../../../docs/built-in-agent.md) |
 | Repo maintenance | `update_repo.py` | README install/update section |
 | Troubleshooting | validation, preview, export, dependency issues | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 

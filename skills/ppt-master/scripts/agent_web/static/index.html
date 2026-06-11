@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>PPT Master Studio</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 32' fill='none' stroke='%23a7c7ff' stroke-width='3' stroke-linecap='round'><rect x='2' y='2' width='44' height='28' rx='4'/><path d='M10 11h15M10 17h26M10 23h19'/></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="ambient ambient-a"></div>
+  <div class="ambient ambient-b"></div>
+  <div class="noise"></div>
+
+  <div class="app-shell">
+    <aside class="rail" id="rail">
+      <div class="brand">
+        <div class="brand-mark">
+          <svg viewBox="0 0 48 32" aria-hidden="true">
+            <rect x="2" y="2" width="44" height="28" rx="4"></rect>
+            <path d="M10 11h15M10 17h26M10 23h19"></path>
+          </svg>
+        </div>
+        <div>
+          <strong>PPT Master</strong>
+          <span>Studio</span>
+        </div>
+      </div>
+
+      <button class="primary-action" id="newProjectButton">
+        <span class="plus">+</span>
+        New presentation
+      </button>
+
+      <div class="rail-section">
+        <div class="section-label">
+          <span>Projects</span>
+          <button class="icon-button" id="refreshProjects" title="Refresh">↻</button>
+        </div>
+        <div class="project-list" id="projectList">
+          <div class="skeleton project-skeleton"></div>
+          <div class="skeleton project-skeleton"></div>
+        </div>
+      </div>
+
+      <div class="rail-footer">
+        <div class="connection-card">
+          <span class="status-dot" id="connectionDot"></span>
+          <div>
+            <strong id="connectionLabel">Connecting</strong>
+            <span id="modelLabel">OpenRouter</span>
+          </div>
+        </div>
+        <button class="rail-link" id="settingsButton">
+          <span>⌘</span>
+          Runtime settings
+        </button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu" aria-label="Open projects">☰</button>
+        <div class="project-heading">
+          <div class="eyebrow" id="projectEyebrow">LOCAL WORKSPACE</div>
+          <h1 id="projectTitle">Create something worth presenting</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="mode-pill">
+            <span class="mode-light"></span>
+            <span id="imageModeLabel">SVG-native</span>
+          </div>
+          <button class="secondary-button" id="previewButton">Open preview</button>
+          <button class="export-button" id="exportButton">Export deck</button>
+        </div>
+      </header>
+
+      <section class="stage-grid">
+        <section class="conversation-panel panel">
+          <div class="conversation-head">
+            <div>
+              <span class="kicker">CREATIVE DIRECTION</span>
+              <h2>Build with the agent</h2>
+            </div>
+            <div class="thinking-chip hidden" id="thinkingChip">
+              <span></span><span></span><span></span>
+              Working
+            </div>
+          </div>
+
+          <div class="welcome" id="welcomeState">
+            <div class="welcome-orbit">
+              <div class="orbit-line orbit-one"></div>
+              <div class="orbit-line orbit-two"></div>
+              <div class="welcome-glyph">P</div>
+            </div>
+            <span class="kicker">FROM SOURCE TO SLIDES</span>
+            <h2>Turn your thinking into an editable deck.</h2>
+            <p>Drop in a document or describe the story. The studio handles strategy, structure, visual construction, quality checks, and export.</p>
+            <div class="starter-grid">
+              <button class="starter-card" data-prompt="Create an executive strategy deck from my uploaded source.">
+                <span class="starter-icon">↗</span>
+                <strong>Executive strategy</strong>
+                <small>Sharp narrative, clear decisions</small>
+              </button>
+              <button class="starter-card" data-prompt="Create a visually rich product launch presentation from my brief.">
+                <span class="starter-icon">✦</span>
+                <strong>Product launch</strong>
+                <small>Bold visuals, memorable moments</small>
+              </button>
+              <button class="starter-card" data-prompt="Create a concise research presentation from my uploaded material.">
+                <span class="starter-icon">◎</span>
+                <strong>Research readout</strong>
+                <small>Evidence first, elegant clarity</small>
+              </button>
+            </div>
+          </div>
+
+          <div class="message-stream" id="messageStream"></div>
+
+          <div class="confirm-card hidden" id="confirmCard">
+            <div class="confirm-art">
+              <span></span><span></span><span></span>
+            </div>
+            <div>
+              <span class="kicker">STRATEGY READY</span>
+              <strong>Review the Eight Confirmations</strong>
+              <p>Approve the direction to continue into slide production.</p>
+            </div>
+            <button id="confirmButton">Confirm direction</button>
+          </div>
+
+          <div class="composer-wrap">
+            <div class="upload-tray hidden" id="uploadTray"></div>
+            <div class="composer" id="composer">
+              <label class="attach-button" for="fileInput" title="Attach local files">
+                <span>+</span>
+                <input id="fileInput" type="file" multiple>
+              </label>
+              <textarea id="messageInput" rows="1" placeholder="Describe the presentation or attach source material…"></textarea>
+              <button class="send-button" id="sendButton" aria-label="Send">
+                <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
+              </button>
+            </div>
+            <div class="composer-meta">
+              <span>Local files only · no web search</span>
+              <span><kbd>Enter</kbd> send · <kbd>Shift</kbd> + <kbd>Enter</kbd> newline</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="production-panel panel">
+          <div class="production-head">
+            <div>
+              <span class="kicker">PRODUCTION</span>
+              <h2>Deck progress</h2>
+            </div>
+            <span class="phase-badge" id="phaseBadge">Source</span>
+          </div>
+
+          <div class="phase-track" id="phaseTrack"></div>
+
+          <div class="preview-shell" id="previewShell">
+            <div class="preview-empty" id="previewEmpty">
+              <div class="preview-stack">
+                <span></span><span></span><span></span>
+              </div>
+              <strong>Your deck will appear here</strong>
+              <p>Slides arrive one by one as the Executor builds them.</p>
+            </div>
+            <iframe class="preview-frame hidden" id="previewFrame" title="Live slide editor"></iframe>
+            <div class="slide-canvas hidden" id="slideCanvas">
+              <img id="activeSlideImage" alt="Generated slide preview">
+            </div>
+          </div>
+
+          <div class="slide-toolbar hidden" id="slideToolbar">
+            <button id="previousSlide">←</button>
+            <span id="slideCounter">1 / 1</span>
+            <button id="nextSlide">→</button>
+            <button class="toolbar-wide" id="editorButton">Edit in live preview</button>
+          </div>
+
+          <div class="filmstrip" id="filmstrip"></div>
+
+          <div class="production-stats">
+            <div>
+              <span>Slides</span>
+              <strong id="slideCount">0</strong>
+            </div>
+            <div>
+              <span>Tokens</span>
+              <strong id="tokenCount">0</strong>
+            </div>
+            <div>
+              <span>Images</span>
+              <strong id="imageModeStat">Off</strong>
+            </div>
+          </div>
+
+          <div class="export-list" id="exportList"></div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="newProjectModal">
+    <div class="modal">
+      <button class="modal-close" data-close-modal>×</button>
+      <span class="kicker">NEW PRESENTATION</span>
+      <h2>What are we making?</h2>
+      <p>Give the agent enough substance to work without web research. You can attach source files after creation.</p>
+      <textarea id="newProjectBrief" rows="6" placeholder="Example: A 12-slide investor update for our Q2 board meeting. Audience is senior leadership. Focus on growth, retention, and the next two strategic bets…"></textarea>
+      <div class="modal-actions">
+        <button class="secondary-button" data-close-modal>Cancel</button>
+        <button class="primary-action" id="createProjectButton">Create presentation</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="settingsModal">
+    <div class="modal settings-modal">
+      <button class="modal-close" data-close-settings>×</button>
+      <span class="kicker">RUNTIME</span>
+      <h2>Local agent settings</h2>
+      <div class="setting-row"><span>Model</span><strong id="settingsModel"></strong></div>
+      <div class="setting-row"><span>Image generation</span><strong id="settingsImages"></strong></div>
+      <div class="setting-row"><span>Web search</span><strong>Unavailable</strong></div>
+      <div class="setting-row"><span>API key</span><strong id="settingsKey"></strong></div>
+      <p class="settings-note">Settings come from the repository’s ignored <code>.env</code> file. Restart the studio after changing them.</p>
+    </div>
+  </div>
+
+  <div class="toast-region" id="toastRegion"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

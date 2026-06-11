@@ -91,6 +91,12 @@ Drop in your source material and get back a **real PowerPoint**: directly editab
 
 > **Why it's shaped this way** — knowing how to use Python and AI agents will matter more and more. This project is meant to show how far you can go with just those two things. There's a learning curve if you're starting cold, but it's the curve worth climbing. Making a deck is just the excuse — what I'm really pushing is Python and agents.
 
+> **No external coding agent required** — configure `OPENROUTER_API_KEY` and
+> run `python skills/ppt-master/scripts/ppt_agent_web.py` for the browser studio,
+> or `python skills/ppt-master/scripts/ppt_agent.py` for the terminal. The built-in runtime has
+> no web-search or URL-fetching tools. Text-to-image is optional and disabled by
+> default. See [Built-in OpenRouter Agent](./docs/built-in-agent.md).
+
 PPT Master is different:
 
 - **Real PowerPoint** — if a file can't be opened and edited in PowerPoint, it shouldn't be called a PPT. Every element PPT Master outputs is directly clickable and editable

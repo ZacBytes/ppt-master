@@ -93,6 +93,12 @@
 >
 > **你要做的**：装 Python、装一个 AI IDE、把资料放进来。
 
+> **也可以不安装外部编程 Agent**：配置 `OPENROUTER_API_KEY` 后运行
+> `python skills/ppt-master/scripts/ppt_agent_web.py` 启动浏览器 Studio，或运行
+> `python skills/ppt-master/scripts/ppt_agent.py` 使用终端。内置运行时不提供网页搜索或
+> URL 抓取，文字生图默认关闭且完全可选。详见
+> [内置 OpenRouter Agent](./docs/zh/built-in-agent.md)。
+
 > **为什么是这种形态** —— 未来，使用 Python 和 AI agent 的能力会越来越重要。这个项目就是要展示：仅凭这两样，你能走多远。代价是零基础上手有一段学习曲线，但走完这段，你就接上了未来。做 PPT 只是个借口——我真正想推广的是 Python 和 agent。
 
 PPT Master 不一样：

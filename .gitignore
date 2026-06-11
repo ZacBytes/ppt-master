@@ -127,6 +127,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -161,6 +162,7 @@ yarn.lock
 .env
 .env.local
 .env.*.local
+.ppt-master-agent/
 
 # Database files
 *.db

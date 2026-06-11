@@ -265,6 +265,7 @@ class SVGQualityChecker:
 
                 # 5. Check text wrapping methods
                 self._check_text_elements(content, result)
+                self._check_multiline_text_bounds(content, result)
 
                 # 6. Check image references (file existence and resolution)
                 self._check_image_references(content, svg_path, result)
@@ -536,6 +537,55 @@ class SVGQualityChecker:
         if text_matches:
             result['warnings'].append(
                 f"Detected {len(text_matches)} potentially overly long single-line text(s) (consider using tspan for wrapping)"
+            )
+
+    def _check_multiline_text_bounds(self, content: str, result: Dict):
+        """Catch obviously over-wide tspan lines inside card-like groups."""
+        root = ET.fromstring(content)
+        parent_map = {
+            child: parent for parent in root.iter() for child in parent
+        }
+        issues = []
+        for text in root.iter(f"{{{SVG_NS}}}text"):
+            tspans = list(text.findall(f"{{{SVG_NS}}}tspan"))
+            if not tspans:
+                continue
+            parent = parent_map.get(text)
+            card_width = None
+            while parent is not None and parent is not root:
+                if parent.tag == f"{{{SVG_NS}}}g":
+                    rects = [
+                        child for child in parent
+                        if child.tag == f"{{{SVG_NS}}}rect"
+                    ]
+                    if rects:
+                        try:
+                            width = float(rects[0].get("width", "0"))
+                        except ValueError:
+                            width = 0
+                        if width >= 200:
+                            card_width = width
+                            break
+                parent = parent_map.get(parent)
+            if not card_width:
+                continue
+            font_size = float(text.get("font-size", "16"))
+            text_x = float(text.get("x", "0"))
+            usable_width = max(0, card_width - text_x - 24)
+            for tspan in tspans:
+                line = "".join(tspan.itertext()).strip()
+                if not line:
+                    continue
+                estimate = len(line) * font_size * 0.54
+                if estimate > usable_width * 1.05:
+                    issues.append(
+                        f"'{line[:42]}' estimated {estimate:.0f}px "
+                        f"for {usable_width:.0f}px available"
+                    )
+        if issues:
+            result["errors"].append(
+                "Multiline text likely overflows its card: "
+                + "; ".join(issues[:4])
             )
 
     def _check_image_references(self, content: str, svg_path: Path, result: Dict):
@@ -1428,6 +1478,10 @@ def print_usage() -> None:
 
 def main() -> None:
     """Run the CLI entry point."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     if len(sys.argv) < 2:
         print_usage()
         sys.exit(0)

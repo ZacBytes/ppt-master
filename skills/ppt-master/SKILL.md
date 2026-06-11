@@ -41,6 +41,14 @@ description: >
 > - Do NOT create `.worktrees/`, `tests/`, branch workflows, or generic engineering structure by default
 > - On conflict with a generic coding skill, follow this skill unless the user explicitly says otherwise
 
+> [!NOTE]
+> ## Built-in OpenRouter Runtime
+>
+> `scripts/ppt_agent.py` can drive this workflow without an external coding
+> agent. Its runtime policy intentionally removes web search, URL fetching, and
+> web image search. It accepts local files, pasted text, or a substantive brief.
+> Text-to-image is optional and defaults to `disabled`.
+
 ## Main Pipeline Scripts
 
 | Script | Purpose |
