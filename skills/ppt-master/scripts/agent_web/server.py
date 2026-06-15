@@ -501,6 +501,104 @@ def create_app(
         except (OSError, RuntimeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
 
+    NOVITA_BASE_URL = "https://api.novita.ai/v3/openai"
+    OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+    PROVIDER_DEFAULTS = {
+        "novita": {
+            "key_env": "NOVITA_API_KEY",
+            "base_url": NOVITA_BASE_URL,
+            "model": "google/gemma-4-31b-it",
+        },
+        "openrouter": {
+            "key_env": "OPENROUTER_API_KEY",
+            "base_url": OPENROUTER_BASE_URL,
+            "model": "google/gemini-2.0-flash-001",
+        },
+    }
+
+    def _read_env_file() -> dict[str, str]:
+        env_path = repo_root / ".env"
+        result: dict[str, str] = {}
+        if not env_path.is_file():
+            return result
+        for raw in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            result[k.strip()] = v.strip()
+        return result
+
+    def _write_env_file(updates: dict[str, str]) -> None:
+        env_path = repo_root / ".env"
+        lines: list[str] = []
+        written: set[str] = set()
+        if env_path.is_file():
+            for raw in env_path.read_text(encoding="utf-8").splitlines():
+                stripped = raw.strip()
+                if stripped and not stripped.startswith("#") and "=" in stripped:
+                    k = stripped.split("=", 1)[0].strip()
+                    if k in updates:
+                        lines.append(f"{k}={updates[k]}")
+                        written.add(k)
+                        continue
+                lines.append(raw)
+        for k, v in updates.items():
+            if k not in written:
+                lines.append(f"{k}={v}")
+        env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    @app.get("/api/settings")
+    def api_get_settings():
+        env = _read_env_file()
+        novita_key = env.get("NOVITA_API_KEY", "")
+        or_key = env.get("OPENROUTER_API_KEY", "")
+        base_url = env.get("PPT_MASTER_AGENT_BASE_URL", "")
+        provider = "openrouter" if (OPENROUTER_BASE_URL in base_url or (or_key and not novita_key)) else "novita"
+        text_key = or_key if provider == "openrouter" else novita_key
+        def preview(k: str) -> str:
+            return f"{k[:8]}…" if k else ""
+        return jsonify({
+            "provider": provider,
+            "text_key_set": bool(text_key),
+            "text_key_preview": preview(text_key),
+            "novita_key_set": bool(novita_key),
+            "novita_key_preview": preview(novita_key),
+            "model": env.get("PPT_MASTER_AGENT_MODEL", PROVIDER_DEFAULTS[provider]["model"]),
+            "image_mode": env.get("PPT_MASTER_IMAGE_GENERATION", "disabled"),
+        })
+
+    @app.post("/api/settings")
+    def api_post_settings():
+        import os as _os
+        body = request.get_json(silent=True) or {}
+        provider = str(body.get("provider", "novita")).lower()
+        if provider not in PROVIDER_DEFAULTS:
+            return jsonify({"error": "provider must be novita or openrouter"}), 400
+        text_api_key = str(body.get("text_api_key", "")).strip()
+        novita_api_key = str(body.get("novita_api_key", "")).strip()
+        model = str(body.get("model", "")).strip()
+        image_mode = str(body.get("image_mode", "disabled")).strip()
+        if image_mode not in {"disabled", "enabled"}:
+            return jsonify({"error": "invalid image_mode"}), 400
+        defaults = PROVIDER_DEFAULTS[provider]
+        updates: dict[str, str] = {
+            "PPT_MASTER_AGENT_BASE_URL": defaults["base_url"],
+            "PPT_MASTER_AGENT_MODEL": model or defaults["model"],
+            "PPT_MASTER_IMAGE_GENERATION": image_mode,
+        }
+        if text_api_key:
+            updates[defaults["key_env"]] = text_api_key
+        if novita_api_key:
+            updates["NOVITA_API_KEY"] = novita_api_key
+        _write_env_file(updates)
+        for k, v in updates.items():
+            if v:
+                _os.environ[k] = v
+            else:
+                _os.environ.pop(k, None)
+        return jsonify({"ok": True})
+
     @app.get("/api/templates")
     def api_templates():
         decks_root = repo_root / "skills" / "ppt-master" / "templates" / "decks"
