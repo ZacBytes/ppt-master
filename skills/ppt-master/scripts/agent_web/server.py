@@ -746,6 +746,25 @@ def create_app(
             return jsonify({"error": "Invalid slide path."}), 400
         return send_file(target, mimetype="image/svg+xml")
 
+    @app.put("/api/slides/<path:filename>")
+    def api_slide_put(filename: str):
+        if not runtime.active_project:
+            return jsonify({"error": "No active project."}), 404
+        slide_dir = runtime.active_project / "svg_output"
+        target = resolve_safe_path(
+            str(slide_dir / filename),
+            repo_root=repo_root,
+            project_path=runtime.active_project,
+            must_exist=True,
+        )
+        if target.parent != slide_dir.resolve() or target.suffix.lower() != ".svg":
+            return jsonify({"error": "Invalid slide path."}), 400
+        svg_data = request.get_data(as_text=True)
+        if not svg_data.strip().startswith("<"):
+            return jsonify({"error": "Invalid SVG"}), 400
+        target.write_text(svg_data, encoding="utf-8")
+        return jsonify({"ok": True})
+
     @app.get("/api/exports/<path:filename>")
     def api_export(filename: str):
         if not runtime.active_project:

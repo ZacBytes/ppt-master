@@ -329,11 +329,46 @@
         <section class="step-panel build-panel hidden" id="panelBuild">
           <div class="build-layout">
 
-            <!-- Left: canvas + filmstrip -->
-            <div class="build-left">
+            <!-- Left: slide panel -->
+            <div class="slide-panel" id="slidePanel">
+              <div class="slide-panel-inner" id="filmstrip"></div>
+            </div>
+
+            <!-- Center: canvas area -->
+            <div class="build-center">
               <div class="build-progress-bar hidden" id="buildProgressBar">
                 <div class="build-progress-fill" id="buildProgressFill"></div>
                 <span id="buildProgressLabel">Building…</span>
+              </div>
+
+              <!-- Toolbar -->
+              <div class="editor-toolbar">
+                <div class="toolbar-group">
+                  <button class="toolbar-btn" id="btnToolText" title="Edit text (click element on slide)">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h12M10 5v10M7 15h6"/></svg>
+                    <span>Text</span>
+                  </button>
+                  <button class="toolbar-btn" id="btnToolStyle" title="Theme style">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M10 3v14M3 10h14"/></svg>
+                    <span>Style</span>
+                  </button>
+                </div>
+                <div class="toolbar-sep"></div>
+                <div class="toolbar-group">
+                  <button class="toolbar-btn active" id="btnEditMode" title="Select &amp; edit">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 3l10 7-5 1-2 5z"/></svg>
+                    <span>Select</span>
+                  </button>
+                </div>
+                <div class="toolbar-right">
+                  <span class="slide-counter" id="slideCounter">0 / 0</span>
+                  <button class="btn-icon-round" id="btnPrevSlide">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-8 6 8 6"/></svg>
+                  </button>
+                  <button class="btn-icon-round" id="btnNextSlide">
+                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4l8 6-8 6"/></svg>
+                  </button>
+                </div>
               </div>
 
               <div class="slide-canvas-wrap">
@@ -348,25 +383,6 @@
                 </div>
                 <div class="inline-svg-canvas" id="inlineSvgCanvas"></div>
               </div>
-
-              <div class="canvas-controls">
-                <button class="btn-icon-round" id="btnPrevSlide">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 4l-8 6 8 6"/>
-                  </svg>
-                </button>
-                <span class="slide-counter" id="slideCounter">0 / 0</span>
-                <button class="btn-icon-round" id="btnNextSlide">
-                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M8 4l8 6-8 6"/>
-                  </svg>
-                </button>
-                <div class="canvas-controls-right">
-                  <button class="btn-primary" id="btnExportBuild">Export PPTX</button>
-                </div>
-              </div>
-
-              <div class="filmstrip" id="filmstrip"></div>
             </div>
 
             <!-- Right: AI edit sidebar -->

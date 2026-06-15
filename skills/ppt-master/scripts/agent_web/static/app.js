@@ -521,10 +521,12 @@ function renderBuildPanel(data) {
     strip.innerHTML = slides.map((slide, i) =>
       `<button class="thumb-btn ${i === state.activeSlide ? "active" : ""}" data-slide="${i}">
         <img src="${slide.url}?v=${slide.modified}" alt="${esc(slide.name)}" loading="lazy">
+        <span class="thumb-num">${i + 1}</span>
       </button>`
     ).join("");
     $$(".thumb-btn").forEach(btn => btn.addEventListener("click", () => {
       state.activeSlide = +btn.dataset.slide;
+      _svgLoadKey = ""; // force reload
       renderBuildPanel(state.data);
     }));
   }
@@ -727,25 +729,66 @@ async function renderInlineSvg(url, modified) {
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");
     svgEl.style.cssText = "width:100%;height:100%;display:block;";
-    // Click-to-select elements
-    svgEl.querySelectorAll("text, rect, image, circle, path, g[id]").forEach(el => {
+    // Click-to-select; double-click text to edit inline
+    svgEl.querySelectorAll("text, tspan").forEach(el => {
       el.style.cursor = "pointer";
       el.addEventListener("click", e => {
         e.stopPropagation();
         svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
         el.classList.add("svg-selected");
-        const label = el.id || el.tagName + (el.textContent?.trim().slice(0,30) || "");
-        state._selectedElement = label;
+        state._selectedElement = el.textContent?.trim().slice(0, 60);
         const aiInput = $("#aiInput");
-        if (aiInput && !aiInput.value) aiInput.placeholder = `Edit "${label}"…`;
-        const sidebar = $("#aiSidebar");
-        sidebar?.classList.remove("hidden");
+        if (aiInput) aiInput.placeholder = `Edit: "${state._selectedElement}"…`;
+      });
+      el.addEventListener("dblclick", e => {
+        e.stopPropagation();
+        el.setAttribute("contenteditable", "true");
+        el.focus();
+        el.style.outline = "none";
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        function commitEdit() {
+          el.removeAttribute("contenteditable");
+          el.blur();
+          // Serialize updated SVG and save
+          const serializer = new XMLSerializer();
+          const updatedSvg = serializer.serializeToString(svgEl);
+          const slides = state.data?.slides || [];
+          const slide = slides[state.activeSlide];
+          if (slide) {
+            fetch(slide.url, {method:"PUT", headers:{"Content-Type":"image/svg+xml"}, body: updatedSvg})
+              .catch(() => {}); // best-effort; server may not support PUT
+          }
+        }
+        el.addEventListener("blur", commitEdit, {once: true});
+        el.addEventListener("keydown", e2 => {
+          if (e2.key === "Enter" && !e2.shiftKey) { e2.preventDefault(); commitEdit(); }
+          if (e2.key === "Escape") { el.removeAttribute("contenteditable"); }
+        });
       });
     });
-    // Deselect on canvas click
+    // Click non-text shapes to select + note in AI sidebar
+    svgEl.querySelectorAll("rect, circle, path, image, g[id]").forEach(el => {
+      if (el.closest("text")) return;
+      el.style.cursor = "pointer";
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
+        el.classList.add("svg-selected");
+        state._selectedElement = el.id || el.tagName;
+        const aiInput = $("#aiInput");
+        if (aiInput) aiInput.placeholder = `Edit element "${state._selectedElement}"…`;
+      });
+    });
+    // Deselect on background click
     svgEl.addEventListener("click", () => {
       svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
       state._selectedElement = null;
+      const aiInput = $("#aiInput");
+      if (aiInput) aiInput.placeholder = "Describe an edit…";
     });
   } catch (err) {
     container.innerHTML = `<div style="color:var(--text-3);padding:40px;text-align:center">Failed to load slide</div>`;
