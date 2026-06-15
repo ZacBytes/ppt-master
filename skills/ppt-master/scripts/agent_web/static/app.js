@@ -819,7 +819,6 @@ $("#btnNextSlide")?.addEventListener("click", () => {
 });
 
 // Build: editor / export
-$$("[id^='btnOpenEditor'], #btnOpenEditorExport").forEach(btn => btn?.addEventListener("click", startPreview));
 $$("[id^='btnExport']").forEach(btn => btn?.addEventListener("click", triggerExport));
 
 // AI sidebar
