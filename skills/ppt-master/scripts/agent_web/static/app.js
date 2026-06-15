@@ -751,68 +751,70 @@ function addDrag(el, svgEl, slideUrl) {
   });
 }
 
-function showTextEditor(textEl, svgEl, container, slideUrl) {
-  // Remove any existing overlay
-  container.querySelectorAll(".svg-text-input").forEach(n => n.remove());
+function showTextEditor(textEl, svgEl, container, slideUrl, clickEvent) {
+  // Remove any existing popover
+  document.querySelectorAll(".svg-text-popover").forEach(n => n.remove());
 
-  const bbox = textEl.getBoundingClientRect();
-  const contRect = container.getBoundingClientRect();
+  // Collect current text — join all tspan lines
+  const tspans = textEl.querySelectorAll("tspan");
+  const currentText = tspans.length > 0
+    ? [...tspans].map(t => t.textContent.trim()).filter(Boolean).join("\n")
+    : textEl.textContent.trim();
 
-  // Scale SVG font-size (viewBox units) to screen pixels
-  const vb = svgEl.viewBox.baseVal;
-  const svgRect = svgEl.getBoundingClientRect();
-  const scale = vb.width > 0 ? svgRect.width / vb.width : 1;
-  const svgFontSize = parseFloat(textEl.getAttribute("font-size")) || 16;
-  const displayFontSize = svgFontSize * scale;
+  // Build a floating popover pinned to click position
+  const pop = document.createElement("div");
+  pop.className = "svg-text-popover";
 
-  const input = document.createElement("textarea");
-  input.className = "svg-text-input";
-  input.value = textEl.textContent || "";
-  input.dataset.textEditing = "1";
-  input.style.cssText = `
-    position:absolute;
-    left:${bbox.left - contRect.left}px;
-    top:${bbox.top - contRect.top}px;
-    width:${Math.max(bbox.width, 120)}px;
-    min-height:${Math.max(bbox.height, 24)}px;
-    font-size:${displayFontSize}px;
-    font-family:${textEl.getAttribute("font-family") || "inherit"};
-    font-weight:${textEl.getAttribute("font-weight") || "normal"};
-    color:${textEl.getAttribute("fill") || "#000"};
-    background:rgba(255,255,255,.92);
-    border:2px solid var(--primary);
-    border-radius:4px;
-    padding:2px 6px;
-    resize:none;
-    outline:none;
-    z-index:10;
-    line-height:1.3;
-    box-shadow:0 2px 12px rgba(79,70,229,.25);
+  const canvasRect = container.getBoundingClientRect();
+  let left = (clickEvent?.clientX ?? canvasRect.left + canvasRect.width / 2) - canvasRect.left;
+  let top  = (clickEvent?.clientY ?? canvasRect.top  + canvasRect.height / 2) - canvasRect.top + 12;
+  // keep within bounds
+  left = Math.min(left, canvasRect.width - 280);
+  top  = Math.min(top,  canvasRect.height - 160);
+
+  pop.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:20;`;
+  pop.innerHTML = `
+    <div class="text-pop-label">Edit text</div>
+    <textarea class="text-pop-area" rows="3"></textarea>
+    <div class="text-pop-actions">
+      <button class="btn-secondary text-pop-cancel">Cancel</button>
+      <button class="btn-primary text-pop-apply">Apply</button>
+    </div>
   `;
   container.style.position = "relative";
-  container.appendChild(input);
-  input.focus();
-  input.select();
+  container.appendChild(pop);
 
-  function commit() {
-    const newText = input.value;
-    input.remove();
-    // Update all tspan children or the text node directly
-    const tspans = textEl.querySelectorAll("tspan");
+  const ta = pop.querySelector(".text-pop-area");
+  ta.value = currentText;
+  ta.focus();
+  ta.select();
+
+  function applyEdit() {
+    const newText = ta.value.trim();
+    pop.remove();
+    if (!newText) return;
     if (tspans.length > 0) {
-      tspans[0].textContent = newText;
-      for (let i = 1; i < tspans.length; i++) tspans[i].textContent = "";
+      const lines = newText.split("\n");
+      tspans.forEach((t, i) => { t.textContent = lines[i] ?? ""; });
     } else {
       textEl.textContent = newText;
     }
     saveSvg(svgEl, slideUrl);
     toast("Text updated", "success");
   }
-  input.addEventListener("blur", commit, {once: true});
-  input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
-    if (e.key === "Escape") { input.removeEventListener("blur", commit); input.remove(); }
+
+  pop.querySelector(".text-pop-apply").addEventListener("click", applyEdit);
+  pop.querySelector(".text-pop-cancel").addEventListener("click", () => pop.remove());
+  ta.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); applyEdit(); }
+    if (e.key === "Escape") pop.remove();
   });
+  // Close if clicking outside
+  setTimeout(() => {
+    document.addEventListener("click", function outside(e) {
+      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener("click", outside); }
+    });
+  }, 0);
 }
 
 async function renderInlineSvg(url, modified) {
@@ -851,7 +853,7 @@ async function renderInlineSvg(url, modified) {
         e.stopPropagation();
         svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
         el.classList.add("svg-selected");
-        showTextEditor(el, svgEl, container, slideUrl);
+        showTextEditor(el, svgEl, container, slideUrl, e);
         const aiInput = $("#aiInput");
         if (aiInput) aiInput.placeholder = `Editing: "${el.textContent?.trim().slice(0,40)}"…`;
       });

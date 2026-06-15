@@ -606,7 +606,20 @@ img { display: block; }
 .inline-svg-canvas { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 24px; box-sizing: border-box; position: relative; }
 .inline-svg-canvas svg { max-width: 100%; max-height: 100%; animation: slideReveal .35s ease; }
 .inline-svg-canvas .svg-selected { outline: 2px solid var(--primary); outline-offset: 1px; }
-.svg-text-input { position: absolute; z-index: 10; }
+.svg-text-input { display: none; }
+.svg-text-popover {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-lg);
+  padding: 12px; width: 260px; display: flex; flex-direction: column; gap: 8px;
+}
+.text-pop-label { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
+.text-pop-area {
+  width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 8px; font-size: 13px; resize: vertical; background: var(--bg);
+  color: var(--text-1); outline: none; min-height: 72px;
+}
+.text-pop-area:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-lt); }
+.text-pop-actions { display: flex; gap: 6px; justify-content: flex-end; }
 @keyframes slideReveal { from { opacity: 0; transform: scale(.97) translateY(6px); } }
 
 /* Canvas controls (removed filmstrip row, kept for legacy compat) */
