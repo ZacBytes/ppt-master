@@ -25,7 +25,8 @@
 
       <!-- ─── GLOBAL TOPBAR ────────────────────────────────────────── -->
       <header class="global-topbar">
-        <!-- Left: home + hamburger -->
+
+        <!-- Left: home + hamburger + project name -->
         <div class="topbar-left">
           <button class="topbar-home-btn" id="btnGoHome" title="Home">
             <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -39,7 +40,6 @@
                 <path d="M3 5h14M3 10h14M3 15h14"/>
               </svg>
             </button>
-            <!-- Dropdown menu -->
             <div class="topbar-dropdown hidden" id="topbarMenu">
               <button class="menu-item" id="btnNewProject">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>
@@ -66,14 +66,38 @@
               </div>
             </div>
           </div>
+          <!-- Project name block (shown when project open) -->
+          <div class="topbar-project-block hidden" id="topbarCenter">
+            <span class="topbar-project-title" id="topbarProjectTitle">Untitled</span>
+            <span class="topbar-project-sub">Private</span>
+          </div>
         </div>
 
-        <!-- Center: project title (shown when project is open) -->
-        <div class="topbar-center hidden" id="topbarCenter">
-          <span class="topbar-project-title" id="topbarProjectTitle">Untitled</span>
+        <!-- Center: insert toolbar (shown only in Build step) -->
+        <div class="topbar-insert hidden" id="topbarInsert">
+          <button class="topbar-tool-btn" id="btnToolText" title="Text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2M9 20h6M12 5v15"/></svg>
+            <span>Text</span>
+          </button>
+          <button class="topbar-tool-btn" id="btnToolMedia" title="Media">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <span>Media</span>
+          </button>
+          <button class="topbar-tool-btn" id="btnToolShape" title="Shape">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="8" height="8" rx="1"/><circle cx="17" cy="7" r="4"/><path d="M3 21l5-8 4 5 3-3 5 6"/></svg>
+            <span>Shape</span>
+          </button>
+          <button class="topbar-tool-btn" id="btnToolChart" title="Chart">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+            <span>Chart</span>
+          </button>
+          <button class="topbar-tool-btn" id="btnToolTable" title="Table">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            <span>Table</span>
+          </button>
         </div>
 
-        <!-- Right: thinking + export -->
+        <!-- Right: thinking + export + present -->
         <div class="topbar-right-global">
           <div class="thinking-chip hidden" id="thinkingChip">
             <span class="think-dot"></span>
@@ -82,8 +106,11 @@
             <span id="thinkingLabel">Working</span>
           </div>
           <button class="btn-ghost" id="btnExportTop">Export PPTX</button>
-          <button class="btn-ghost-sm" id="btnExportMobile" style="display:none">Export</button>
+          <button class="topbar-present-btn" id="btnPresent" title="Present">
+            <svg viewBox="0 0 20 20" fill="currentColor"><path d="M6 4l10 6-10 6V4z"/></svg>
+          </button>
         </div>
+
       </header>
 
       <!-- ─── WELCOME SCREEN (no project) ─────────────────────────── -->
@@ -310,35 +337,6 @@
                 <span id="buildProgressLabel">Building…</span>
               </div>
 
-              <!-- Toolbar -->
-              <div class="editor-toolbar">
-                <div class="toolbar-group">
-                  <button class="toolbar-btn" id="btnToolText" title="Edit text (click element on slide)">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 5h12M10 5v10M7 15h6"/></svg>
-                    <span>Text</span>
-                  </button>
-                  <button class="toolbar-btn" id="btnToolStyle" title="Theme style">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10" cy="10" r="7"/><path d="M10 3v14M3 10h14"/></svg>
-                    <span>Style</span>
-                  </button>
-                </div>
-                <div class="toolbar-sep"></div>
-                <div class="toolbar-group">
-                  <button class="toolbar-btn active" id="btnEditMode" title="Select &amp; edit">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 3l10 7-5 1-2 5z"/></svg>
-                    <span>Select</span>
-                  </button>
-                </div>
-                <div class="toolbar-right">
-                  <span class="slide-counter" id="slideCounter">0 / 0</span>
-                  <button class="btn-icon-round" id="btnPrevSlide">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4l-8 6 8 6"/></svg>
-                  </button>
-                  <button class="btn-icon-round" id="btnNextSlide">
-                    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4l8 6-8 6"/></svg>
-                  </button>
-                </div>
-              </div>
 
               <div class="slide-canvas-wrap">
                 <div class="canvas-empty" id="canvasEmpty">

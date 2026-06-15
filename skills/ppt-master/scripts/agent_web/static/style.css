@@ -59,7 +59,7 @@ img { display: block; }
   background: var(--surface); border-bottom: 1px solid var(--border);
   padding: 0 12px; position: sticky; top: 0; z-index: 40;
 }
-.topbar-left { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.topbar-left { display: flex; align-items: center; gap: 4px; flex: 1; }
 .topbar-home-btn {
   width: 36px; height: 36px; border: none; border-radius: var(--radius-sm);
   background: none; color: var(--text-2); display: grid; place-items: center;
@@ -97,15 +97,40 @@ img { display: block; }
   padding: 8px 10px; font-size: 11px; color: var(--text-3);
 }
 
-.topbar-center {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 600; color: var(--text-1);
-  overflow: hidden;
+/* Project name block (left section, shown when project open) */
+.topbar-project-block {
+  display: flex; flex-direction: column; justify-content: center;
+  margin-left: 10px; line-height: 1.2; overflow: hidden;
 }
 .topbar-project-title {
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px;
+  font-size: 13px; font-weight: 600; color: var(--text-1);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px;
 }
-.topbar-right-global { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.topbar-project-sub { font-size: 11px; color: var(--text-3); }
+
+/* Insert toolbar — centered in topbar, only visible in Build */
+.topbar-insert {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 0;
+}
+.topbar-tool-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  height: var(--topbar-h); padding: 0 18px; border: none;
+  background: transparent; color: var(--text-2); font-size: 11px; font-weight: 500;
+  cursor: pointer; transition: background .12s, color .12s; border-radius: 0;
+}
+.topbar-tool-btn svg { width: 20px; height: 20px; }
+.topbar-tool-btn span { line-height: 1; letter-spacing: .01em; }
+.topbar-tool-btn:hover { background: var(--surface-3); color: var(--text-1); }
+
+.topbar-right-global { flex: 1; display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.topbar-present-btn {
+  height: 32px; padding: 0 8px; border: none; border-radius: var(--radius-sm);
+  background: none; color: var(--text-2);
+  display: grid; place-items: center; cursor: pointer;
+  transition: color .15s, background .15s; flex-shrink: 0;
+}
+.topbar-present-btn:hover { color: var(--text-1); background: var(--surface-3); }
+.topbar-present-btn svg { width: 26px; height: 26px; margin-left: 0; }
 
 /* ─── Step bar (below global topbar, inside project view) ────────────── */
 .step-bar {
@@ -562,24 +587,6 @@ img { display: block; }
 }
 #buildProgressLabel { font-size: 12px; font-weight: 600; color: var(--primary); white-space: nowrap; }
 
-/* Editor toolbar */
-.editor-toolbar {
-  flex-shrink: 0; height: 46px; display: flex; align-items: center; gap: 4px;
-  padding: 0 12px; background: var(--surface); border-bottom: 1px solid var(--border);
-}
-.toolbar-group { display: flex; align-items: center; gap: 2px; }
-.toolbar-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 1px;
-  height: 36px; padding: 0 10px; border: none; border-radius: var(--radius-sm);
-  background: transparent; color: var(--text-2); font-size: 10px; font-weight: 600;
-  cursor: pointer; transition: background .12s, color .12s;
-}
-.toolbar-btn svg { width: 16px; height: 16px; }
-.toolbar-btn:hover { background: var(--surface-3); color: var(--text-1); }
-.toolbar-btn.active { background: var(--primary-lt); color: var(--primary); }
-.toolbar-sep { width: 1px; height: 24px; background: var(--border); margin: 0 6px; }
-.toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 6px; }
-.slide-counter { font-size: 12px; color: var(--text-3); min-width: 44px; text-align: center; }
 
 .slide-canvas-wrap {
   flex: 1; min-height: 0; background: #E2E8F0; display: grid; place-items: center;
@@ -607,19 +614,7 @@ img { display: block; }
 .inline-svg-canvas svg { max-width: 100%; max-height: 100%; animation: slideReveal .35s ease; }
 .inline-svg-canvas .svg-selected { outline: 2px solid var(--primary); outline-offset: 1px; }
 .svg-text-input { display: none; }
-.svg-text-popover {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: var(--shadow-lg);
-  padding: 12px; width: 260px; display: flex; flex-direction: column; gap: 8px;
-}
-.text-pop-label { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: .06em; }
-.text-pop-area {
-  width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm);
-  padding: 8px; font-size: 13px; resize: vertical; background: var(--bg);
-  color: var(--text-1); outline: none; min-height: 72px;
-}
-.text-pop-area:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-lt); }
-.text-pop-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.svg-inline-editor { box-sizing: border-box; pointer-events: all; }
 @keyframes slideReveal { from { opacity: 0; transform: scale(.97) translateY(6px); } }
 
 /* Canvas controls (removed filmstrip row, kept for legacy compat) */

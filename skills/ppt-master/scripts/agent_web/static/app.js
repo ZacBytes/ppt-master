@@ -221,6 +221,12 @@ function showStep(step, data) {
     }
   });
 
+  // Hide step bar for build and export; show insert toolbar only in build
+  const stepBar = document.querySelector(".step-bar");
+  if (stepBar) stepBar.classList.toggle("hidden", step === "build" || step === "export");
+  const topbarInsert = $("#topbarInsert");
+  if (topbarInsert) topbarInsert.classList.toggle("hidden", step !== "build");
+
   // Step-specific rendering
   if (step === "outline") renderOutlinePanel(data);
   if (step === "build") renderBuildPanel(data);
@@ -751,48 +757,88 @@ function addDrag(el, svgEl, slideUrl) {
   });
 }
 
-function showTextEditor(textEl, svgEl, container, slideUrl, clickEvent) {
-  // Remove any existing popover
-  document.querySelectorAll(".svg-text-popover").forEach(n => n.remove());
+function showTextEditor(textEl, svgEl, container, slideUrl) {
+  // Remove any existing inline editor
+  container.querySelectorAll(".svg-inline-editor").forEach(n => n.remove());
 
-  // Collect current text — join all tspan lines
-  const tspans = textEl.querySelectorAll("tspan");
+  const tspans = [...textEl.querySelectorAll("tspan")];
   const currentText = tspans.length > 0
-    ? [...tspans].map(t => t.textContent.trim()).filter(Boolean).join("\n")
-    : textEl.textContent.trim();
+    ? tspans.map(t => t.textContent).join("\n")
+    : textEl.textContent;
 
-  // Build a floating popover pinned to click position
-  const pop = document.createElement("div");
-  pop.className = "svg-text-popover";
+  // Compute scale: SVG viewBox units → screen pixels
+  const vb = svgEl.viewBox.baseVal;
+  const svgRect = svgEl.getBoundingClientRect();
+  const scaleX = vb.width  ? svgRect.width  / vb.width  : 1;
+  const scaleY = vb.height ? svgRect.height / vb.height : 1;
 
-  const canvasRect = container.getBoundingClientRect();
-  let left = (clickEvent?.clientX ?? canvasRect.left + canvasRect.width / 2) - canvasRect.left;
-  let top  = (clickEvent?.clientY ?? canvasRect.top  + canvasRect.height / 2) - canvasRect.top + 12;
-  // keep within bounds
-  left = Math.min(left, canvasRect.width - 280);
-  top  = Math.min(top,  canvasRect.height - 160);
+  // Position overlay to match the SVG text element's bounding box
+  const textRect = textEl.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
 
-  pop.style.cssText = `position:absolute;left:${left}px;top:${top}px;z-index:20;`;
-  pop.innerHTML = `
-    <div class="text-pop-label">Edit text</div>
-    <textarea class="text-pop-area" rows="3"></textarea>
-    <div class="text-pop-actions">
-      <button class="btn-secondary text-pop-cancel">Cancel</button>
-      <button class="btn-primary text-pop-apply">Apply</button>
-    </div>
-  `;
+  const svgFontSize = parseFloat(textEl.getAttribute("font-size") || getComputedStyle(textEl).fontSize || "16");
+  const displayFontSize = svgFontSize * scaleX;
+
+  const fontFamily = textEl.getAttribute("font-family") || "Inter, sans-serif";
+  const fontWeight = textEl.getAttribute("font-weight") || "normal";
+  const fill       = textEl.getAttribute("fill") || "#ffffff";
+  const textAnchor = textEl.getAttribute("text-anchor") || "start";
+  const alignMap   = { start: "left", middle: "center", end: "right" };
+  const textAlign  = alignMap[textAnchor] || "left";
+
+  // Overlay dimensions: full width of parent group or fallback to text width + padding
+  const left   = textRect.left - containerRect.left;
+  const top    = textRect.top  - containerRect.top;
+  const width  = Math.max(textRect.width + 32, 120);
+  const height = Math.max(textRect.height + 16, displayFontSize + 16);
+
+  const overlay = document.createElement("div");
+  overlay.className = "svg-inline-editor";
+  overlay.contentEditable = "true";
+  overlay.spellcheck = false;
+  overlay.style.cssText = [
+    `position:absolute`,
+    `left:${left}px`,
+    `top:${top - 4}px`,
+    `min-width:${width}px`,
+    `min-height:${height}px`,
+    `font-size:${displayFontSize}px`,
+    `font-family:${fontFamily}`,
+    `font-weight:${fontWeight}`,
+    `color:${fill}`,
+    `text-align:${textAlign}`,
+    `line-height:${scaleY * (svgFontSize * 1.4)}px`,
+    `padding:4px 6px`,
+    `white-space:pre-wrap`,
+    `word-break:break-word`,
+    `z-index:30`,
+    `outline:2px solid #4f8ef7`,
+    `border-radius:3px`,
+    `background:rgba(30,40,60,0.55)`,
+    `backdrop-filter:blur(2px)`,
+    `cursor:text`,
+  ].join(";");
+
+  overlay.textContent = currentText;
   container.style.position = "relative";
-  container.appendChild(pop);
+  container.appendChild(overlay);
 
-  const ta = pop.querySelector(".text-pop-area");
-  ta.value = currentText;
-  ta.focus();
-  ta.select();
+  // Hide original SVG text while editing
+  textEl.style.visibility = "hidden";
 
-  function applyEdit() {
-    const newText = ta.value.trim();
-    pop.remove();
-    if (!newText) return;
+  // Place cursor at end
+  const range = document.createRange();
+  range.selectNodeContents(overlay);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  overlay.focus();
+
+  function commit() {
+    const newText = overlay.textContent ?? "";
+    overlay.remove();
+    textEl.style.visibility = "";
     if (tspans.length > 0) {
       const lines = newText.split("\n");
       tspans.forEach((t, i) => { t.textContent = lines[i] ?? ""; });
@@ -800,21 +846,19 @@ function showTextEditor(textEl, svgEl, container, slideUrl, clickEvent) {
       textEl.textContent = newText;
     }
     saveSvg(svgEl, slideUrl);
-    toast("Text updated", "success");
   }
 
-  pop.querySelector(".text-pop-apply").addEventListener("click", applyEdit);
-  pop.querySelector(".text-pop-cancel").addEventListener("click", () => pop.remove());
-  ta.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); applyEdit(); }
-    if (e.key === "Escape") pop.remove();
+  function cancel() {
+    overlay.remove();
+    textEl.style.visibility = "";
+  }
+
+  overlay.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+    if (e.key === "Escape") { cancel(); }
+    e.stopPropagation();
   });
-  // Close if clicking outside
-  setTimeout(() => {
-    document.addEventListener("click", function outside(e) {
-      if (!pop.contains(e.target)) { pop.remove(); document.removeEventListener("click", outside); }
-    });
-  }, 0);
+  overlay.addEventListener("blur", () => commit());
 }
 
 async function renderInlineSvg(url, modified) {
