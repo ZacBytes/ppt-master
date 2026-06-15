@@ -758,6 +758,13 @@ function showTextEditor(textEl, svgEl, container, slideUrl) {
   const bbox = textEl.getBoundingClientRect();
   const contRect = container.getBoundingClientRect();
 
+  // Scale SVG font-size (viewBox units) to screen pixels
+  const vb = svgEl.viewBox.baseVal;
+  const svgRect = svgEl.getBoundingClientRect();
+  const scale = vb.width > 0 ? svgRect.width / vb.width : 1;
+  const svgFontSize = parseFloat(textEl.getAttribute("font-size")) || 16;
+  const displayFontSize = svgFontSize * scale;
+
   const input = document.createElement("textarea");
   input.className = "svg-text-input";
   input.value = textEl.textContent || "";
@@ -768,9 +775,9 @@ function showTextEditor(textEl, svgEl, container, slideUrl) {
     top:${bbox.top - contRect.top}px;
     width:${Math.max(bbox.width, 120)}px;
     min-height:${Math.max(bbox.height, 24)}px;
-    font-size:${parseFloat(textEl.getAttribute("font-size") || getComputedStyle(textEl).fontSize) || 14}px;
-    font-family:inherit;
-    font-weight:${textEl.getAttribute("font-weight") || "inherit"};
+    font-size:${displayFontSize}px;
+    font-family:${textEl.getAttribute("font-family") || "inherit"};
+    font-weight:${textEl.getAttribute("font-weight") || "normal"};
     color:${textEl.getAttribute("fill") || "#000"};
     background:rgba(255,255,255,.92);
     border:2px solid var(--primary);
