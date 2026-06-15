@@ -180,9 +180,14 @@ function renderTopbar(data) {
   if (hasProject || data.active_draft) {
     welcome.classList.add("hidden");
     projectView.classList.remove("hidden");
-    $("#projectTitle").textContent = name || "New presentation";
+    const displayName = name || "New presentation";
+    $("#projectTitle").textContent = displayName;
     $("#projectEyebrow").textContent = data.active_draft ? "DRAFT" : "ACTIVE PROJECT";
     if (data.model) $("#modelLabel").textContent = data.model;
+    const tc = $("#topbarCenter");
+    if (tc) { tc.classList.remove("hidden"); }
+    const tpt = $("#topbarProjectTitle");
+    if (tpt) tpt.textContent = displayName;
   } else {
     welcome.classList.remove("hidden");
     projectView.classList.add("hidden");
@@ -888,21 +893,34 @@ function toast(msg, type = "") {
 $("#btnNewProject")?.addEventListener("click", () => startNewPresentation());
 $("#btnWelcomeNew")?.addEventListener("click", () => startNewPresentation());
 
-// Nav rail
+// Global topbar hamburger
+$("#btnHamburger")?.addEventListener("click", e => {
+  e.stopPropagation();
+  $("#topbarMenu")?.classList.toggle("hidden");
+});
+$$(".menu-item").forEach(btn => btn.addEventListener("click", () => {
+  $("#topbarMenu")?.classList.add("hidden");
+}));
+document.addEventListener("click", e => {
+  if (!e.target.closest("#topbarMenu") && !e.target.closest("#btnHamburger")) {
+    $("#topbarMenu")?.classList.add("hidden");
+  }
+});
+
+// Home button
 $("#btnGoHome")?.addEventListener("click", () => {
-  // Show welcome screen / deselect project
+  $("#topbarMenu")?.classList.add("hidden");
   const welcome = $("#welcomeScreen");
   const projectView = $("#projectView");
   welcome?.classList.remove("hidden");
   projectView?.classList.add("hidden");
-  $$(".rail-nav-btn").forEach(b => b.classList.remove("active"));
-  $("#btnGoHome")?.classList.add("active");
+  $("#topbarCenter")?.classList.add("hidden");
 });
+
+// Templates → go to Create step
 $("#btnGoTemplates")?.addEventListener("click", () => {
-  // Jump to Create step with template gallery visible
+  $("#topbarMenu")?.classList.add("hidden");
   startNewPresentation();
-  $$(".rail-nav-btn").forEach(b => b.classList.remove("active"));
-  $("#btnGoTemplates")?.classList.add("active");
 });
 
 // Example cards
