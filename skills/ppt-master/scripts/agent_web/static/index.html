@@ -211,13 +211,8 @@
 
                 <div class="config-grid">
                   <div class="config-item">
-                    <label class="form-label" for="slideCountSelect">Slides</label>
-                    <select class="form-select" id="slideCountSelect">
-                      <option value="8">~8</option>
-                      <option value="12" selected>~12</option>
-                      <option value="16">~16</option>
-                      <option value="20">~20</option>
-                    </select>
+                    <label class="form-label" for="slideCountInput">Slides</label>
+                    <input class="form-input" type="number" id="slideCountInput" min="1" max="20" value="12">
                   </div>
                   <div class="config-item">
                     <label class="form-label" for="audienceInput">Audience</label>
@@ -437,7 +432,7 @@
 
   <!-- ─── SETTINGS MODAL ───────────────────────────────────────────── -->
   <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal">
+    <div class="modal settings-modal">
       <button class="modal-close" id="btnCloseSettings">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M5 5l10 10M15 5L5 15"/>
@@ -445,13 +440,70 @@
       </button>
       <span class="modal-eyebrow">RUNTIME</span>
       <h2 class="modal-title">Settings</h2>
-      <div class="settings-list">
-        <div class="setting-row"><span>Model</span><strong id="settingsModel">—</strong></div>
-        <div class="setting-row"><span>Image generation</span><strong id="settingsImages">—</strong></div>
-        <div class="setting-row"><span>API key</span><strong id="settingsKey">—</strong></div>
-        <div class="setting-row"><span>Web search</span><strong>Unavailable</strong></div>
+
+      <div class="settings-form">
+
+        <div class="settings-field">
+          <label class="settings-label">Text provider</label>
+          <div class="provider-toggle" id="providerToggle">
+            <button class="provider-btn active" data-provider="novita">Novita AI</button>
+            <button class="provider-btn" data-provider="openrouter">OpenRouter</button>
+          </div>
+        </div>
+
+        <!-- Novita key — used for text (when Novita selected) AND image generation -->
+        <div class="settings-field">
+          <label class="settings-label" for="settingsNovitaKey">Novita API key</label>
+          <div class="key-input-wrap">
+            <input class="form-input" type="password" id="settingsNovitaKey" placeholder="Paste key…" autocomplete="off">
+            <button class="btn-icon key-toggle" id="btnShowNovitaKey" title="Show / hide">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="10" cy="10" r="3"/>
+                <path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/>
+              </svg>
+            </button>
+          </div>
+          <p class="settings-hint" id="novitaKeyStatus">—</p>
+        </div>
+
+        <!-- OpenRouter key — shown only when OpenRouter is selected -->
+        <div class="settings-field" id="orKeyField" style="display:none">
+          <label class="settings-label" for="settingsTextKey">OpenRouter API key</label>
+          <div class="key-input-wrap">
+            <input class="form-input" type="password" id="settingsTextKey" placeholder="Paste key…" autocomplete="off">
+            <button class="btn-icon key-toggle" id="btnShowTextKey" title="Show / hide">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <circle cx="10" cy="10" r="3"/>
+                <path d="M2 10s3-6 8-6 8 6 8 6-3 6-8 6-8-6-8-6z"/>
+              </svg>
+            </button>
+          </div>
+          <p class="settings-hint" id="textKeyStatus">—</p>
+        </div>
+
+        <div class="settings-field">
+          <label class="settings-label" for="settingsModel">Model</label>
+          <input class="form-input" type="text" id="settingsModel" placeholder="e.g. google/gemma-4-31b-it">
+          <p class="settings-hint">Any model ID on the selected provider.</p>
+        </div>
+
+        <div class="settings-field">
+          <label class="settings-label" for="settingsImageMode">Image generation</label>
+          <select class="form-select" id="settingsImageMode">
+            <option value="disabled">Disabled — SVG-native visuals only</option>
+            <option value="prompts-only">Prompts only — write prompts, no API calls</option>
+            <option value="enabled">Enabled — generate via Novita</option>
+          </select>
+        </div>
       </div>
-      <p class="settings-note">Settings come from the repository's <code>.env</code> file. Restart the studio after changing them.</p>
+
+      <div class="settings-footer">
+        <p class="settings-note">Saved to <code>.env</code> in the repo root. Takes effect immediately.</p>
+        <div class="settings-actions">
+          <button class="btn-secondary" id="btnCancelSettings">Cancel</button>
+          <button class="btn-primary" id="btnSaveSettings">Save settings</button>
+        </div>
+      </div>
     </div>
   </div>
 

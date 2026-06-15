@@ -125,12 +125,6 @@ function render(data) {
   renderStep(data);
   renderThinking(data.task.status === "running");
 
-  // Sync settings modal
-  if ($("#settingsModel")) {
-    $("#settingsModel").textContent = data.model || "—";
-    $("#settingsImages").textContent = data.image_mode || "—";
-    $("#settingsKey").textContent = data.key_configured ? "Configured" : "Missing";
-  }
 
   // Determine correct step from backend phase
   const backendStep = phaseToStep(data.workflow?.phase);
@@ -293,7 +287,7 @@ async function handleCreate() {
   const topic = $("#topicInput")?.value.trim();
   if (!topic) { toast("Describe your presentation first.", "error"); return; }
 
-  const slideCount = parseInt($("#slideCountSelect")?.value || "12");
+  const slideCount = parseInt($("#slideCountInput")?.value || "12");
   const audience = $("#audienceInput")?.value.trim() || "";
   const tone = $("#toneSelect")?.value || "Professional";
   const template = state.selectedTemplate || "";
@@ -852,8 +846,97 @@ $("#aiInput")?.addEventListener("keydown", e => {
 $("#btnRefresh")?.addEventListener("click", () => refreshState({silent:false}));
 
 // Settings
-$("#btnSettings")?.addEventListener("click", () => $("#settingsModal")?.classList.remove("hidden"));
+const PROVIDER_DEFAULTS = {
+  novita: "google/gemma-4-31b-it",
+  openrouter: "google/gemini-2.0-flash-001",
+};
+
+let settingsProvider = "novita";
+
+function openSettings() {
+  $("#settingsModal")?.classList.remove("hidden");
+  loadSettings();
+}
+
+function updateProviderUI() {
+  $$(".provider-btn").forEach(b => b.classList.toggle("active", b.dataset.provider === settingsProvider));
+  const orField = $("#orKeyField");
+  if (orField) orField.style.display = settingsProvider === "openrouter" ? "" : "none";
+  const modelInput = $("#settingsModel");
+  if (modelInput && !modelInput.value) modelInput.value = PROVIDER_DEFAULTS[settingsProvider];
+}
+
+async function loadSettings() {
+  try {
+    const s = await api("/api/settings");
+    settingsProvider = s.provider || "novita";
+    updateProviderUI();
+
+    // Novita key (shared: text when Novita selected + image generation)
+    const novitaKey = $("#settingsNovitaKey");
+    if (novitaKey) {
+      novitaKey.value = s.novita_key_set ? s.novita_key_preview : "";
+      novitaKey.placeholder = s.novita_key_set ? "Paste to replace" : "Paste key…";
+      novitaKey.addEventListener("focus", () => { if (novitaKey.value === s.novita_key_preview) novitaKey.value = ""; }, { once: true });
+    }
+    const novitaStatus = $("#novitaKeyStatus");
+    if (novitaStatus) novitaStatus.textContent = s.novita_key_set ? `Configured (${s.novita_key_preview})` : "Not set";
+
+    // OpenRouter key (only visible when OpenRouter selected)
+    const textKey = $("#settingsTextKey");
+    if (textKey) {
+      textKey.value = s.text_key_set && settingsProvider === "openrouter" ? s.text_key_preview : "";
+      textKey.placeholder = s.text_key_set ? "Paste to replace" : "Paste key…";
+      textKey.addEventListener("focus", () => { if (textKey.value === s.text_key_preview) textKey.value = ""; }, { once: true });
+    }
+    const textStatus = $("#textKeyStatus");
+    if (textStatus) textStatus.textContent = s.text_key_set ? `Configured (${s.text_key_preview})` : "Not set";
+
+    const modelInput = $("#settingsModel");
+    if (modelInput) modelInput.value = s.model || PROVIDER_DEFAULTS[settingsProvider];
+    const imageModeEl = $("#settingsImageMode");
+    if (imageModeEl) imageModeEl.value = s.image_mode || "disabled";
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function saveSettings() {
+  const novitaKeyEl = $("#settingsNovitaKey");
+  const textKeyEl = $("#settingsTextKey");
+  const novitaKeyVal = novitaKeyEl?.value.trim() || "";
+  const textKeyVal = textKeyEl?.value.trim() || "";
+  const model = $("#settingsModel")?.value.trim();
+  const imageMode = $("#settingsImageMode")?.value;
+  // Don't send preview strings as new keys
+  const novitaKey = novitaKeyVal.endsWith("…") ? "" : novitaKeyVal;
+  const textKey = textKeyVal.endsWith("…") ? "" : textKeyVal;
+  try {
+    await api("/api/settings", {
+      method: "POST",
+      body: JSON.stringify({ provider: settingsProvider, text_api_key: textKey, novita_api_key: novitaKey, model, image_mode: imageMode }),
+    });
+    toast("Settings saved", "success");
+    $("#settingsModal")?.classList.add("hidden");
+    refreshState();
+  } catch (err) { toast(err.message, "error"); }
+}
+
+$$(".provider-btn").forEach(btn => btn.addEventListener("click", () => {
+  settingsProvider = btn.dataset.provider;
+  updateProviderUI();
+}));
+
+// Show/hide toggles
+[["#btnShowTextKey","#settingsTextKey"],["#btnShowNovitaKey","#settingsNovitaKey"]].forEach(([btn, inp]) => {
+  $(btn)?.addEventListener("click", () => {
+    const el = $(inp);
+    if (el) el.type = el.type === "password" ? "text" : "password";
+  });
+});
+
+$("#btnSettings")?.addEventListener("click", openSettings);
 $("#btnCloseSettings")?.addEventListener("click", () => $("#settingsModal")?.classList.add("hidden"));
+$("#btnCancelSettings")?.addEventListener("click", () => $("#settingsModal")?.classList.add("hidden"));
+$("#btnSaveSettings")?.addEventListener("click", saveSettings);
 
 // Mobile nav
 $("#btnHamburger")?.addEventListener("click", openMobileSidebar);
