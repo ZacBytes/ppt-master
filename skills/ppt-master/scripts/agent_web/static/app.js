@@ -504,6 +504,14 @@ function renderBuildPanel(data) {
     frame?.classList.remove("hidden");
     if (frame && frame.src !== preview.url) frame.src = preview.url;
   } else if (slides.length) {
+    // Auto-start the editor so the canvas is always interactive
+    if (!state._previewStarting) {
+      state._previewStarting = true;
+      api("/api/preview/start", {method:"POST", body:"{}"})
+        .then(() => refreshState({silent:true}))
+        .catch(() => { state._previewStarting = false; });
+    }
+    // Show static image while editor is starting up
     empty?.classList.add("hidden");
     frame?.classList.add("hidden");
     img?.classList.remove("hidden");
@@ -658,7 +666,7 @@ async function openProject(path) {
   try {
     const data = await api("/api/projects/open", {method:"POST", body: JSON.stringify({path})});
     state.activeSlide = 0; state.outline = null; state.uploads = [];
-    state.sigs = {projects:"",slides:"",exports:""};
+    state.sigs = {projects:"",slides:"",exports:""}; state._previewStarting = false;
     state.data = data;
     const step = phaseToStep(data.workflow?.phase);
     state.wfStep = step;
