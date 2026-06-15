@@ -712,6 +712,97 @@ async function triggerExport() {
 /* ─── Inline SVG canvas ──────────────────────────────────────────────── */
 let _svgLoadKey = "";
 
+function saveSvg(svgEl, slideUrl) {
+  const svg = new XMLSerializer().serializeToString(svgEl);
+  fetch(slideUrl, {method:"PUT", headers:{"Content-Type":"image/svg+xml"}, body: svg}).catch(() => {});
+}
+
+function svgPoint(svgEl, clientX, clientY) {
+  const pt = svgEl.createSVGPoint();
+  pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svgEl.getScreenCTM().inverse());
+}
+
+function addDrag(el, svgEl, slideUrl) {
+  let dragging = false, startPt, origTransform;
+  el.addEventListener("mousedown", e => {
+    if (e.target.closest("[data-text-editing]")) return;
+    dragging = true;
+    startPt = svgPoint(svgEl, e.clientX, e.clientY);
+    const t = el.getAttribute("transform") || "";
+    const m = t.match(/translate\(([-\d.]+)[,\s]+([-\d.]+)\)/);
+    origTransform = { x: m ? +m[1] : 0, y: m ? +m[2] : 0, rest: t.replace(/translate\([^)]+\)/, "").trim() };
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", e => {
+    if (!dragging) return;
+    const cur = svgPoint(svgEl, e.clientX, e.clientY);
+    const dx = cur.x - startPt.x, dy = cur.y - startPt.y;
+    const nx = origTransform.x + dx, ny = origTransform.y + dy;
+    el.setAttribute("transform", `translate(${nx},${ny}) ${origTransform.rest}`.trim());
+  });
+  window.addEventListener("mouseup", () => {
+    if (dragging) { dragging = false; saveSvg(svgEl, slideUrl); }
+  });
+}
+
+function showTextEditor(textEl, svgEl, container, slideUrl) {
+  // Remove any existing overlay
+  container.querySelectorAll(".svg-text-input").forEach(n => n.remove());
+
+  const bbox = textEl.getBoundingClientRect();
+  const contRect = container.getBoundingClientRect();
+
+  const input = document.createElement("textarea");
+  input.className = "svg-text-input";
+  input.value = textEl.textContent || "";
+  input.dataset.textEditing = "1";
+  input.style.cssText = `
+    position:absolute;
+    left:${bbox.left - contRect.left}px;
+    top:${bbox.top - contRect.top}px;
+    width:${Math.max(bbox.width, 120)}px;
+    min-height:${Math.max(bbox.height, 24)}px;
+    font-size:${parseFloat(textEl.getAttribute("font-size") || getComputedStyle(textEl).fontSize) || 14}px;
+    font-family:inherit;
+    font-weight:${textEl.getAttribute("font-weight") || "inherit"};
+    color:${textEl.getAttribute("fill") || "#000"};
+    background:rgba(255,255,255,.92);
+    border:2px solid var(--primary);
+    border-radius:4px;
+    padding:2px 6px;
+    resize:none;
+    outline:none;
+    z-index:10;
+    line-height:1.3;
+    box-shadow:0 2px 12px rgba(79,70,229,.25);
+  `;
+  container.style.position = "relative";
+  container.appendChild(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const newText = input.value;
+    input.remove();
+    // Update all tspan children or the text node directly
+    const tspans = textEl.querySelectorAll("tspan");
+    if (tspans.length > 0) {
+      tspans[0].textContent = newText;
+      for (let i = 1; i < tspans.length; i++) tspans[i].textContent = "";
+    } else {
+      textEl.textContent = newText;
+    }
+    saveSvg(svgEl, slideUrl);
+    toast("Text updated", "success");
+  }
+  input.addEventListener("blur", commit, {once: true});
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
+    if (e.key === "Escape") { input.removeEventListener("blur", commit); input.remove(); }
+  });
+}
+
 async function renderInlineSvg(url, modified) {
   const key = `${url}?v=${modified}`;
   if (key === _svgLoadKey) return;
@@ -719,77 +810,48 @@ async function renderInlineSvg(url, modified) {
 
   const container = $("#inlineSvgCanvas");
   if (!container) return;
+  container.querySelectorAll(".svg-text-input").forEach(n => n.remove());
+
   try {
     const res = await fetch(`${url}?v=${modified}`);
-    const text = await res.text();
-    container.innerHTML = text;
+    const svgText = await res.text();
+    container.innerHTML = svgText;
     const svgEl = container.querySelector("svg");
     if (!svgEl) return;
-    // Make it fill the container while keeping aspect ratio
+
     svgEl.removeAttribute("width");
     svgEl.removeAttribute("height");
-    svgEl.style.cssText = "width:100%;height:100%;display:block;";
-    // Click-to-select; double-click text to edit inline
-    svgEl.querySelectorAll("text, tspan").forEach(el => {
-      el.style.cursor = "pointer";
+    svgEl.style.cssText = "max-width:100%;max-height:100%;display:block;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,.18);";
+
+    const slides = state.data?.slides || [];
+    const slideUrl = slides[state.activeSlide]?.url;
+
+    // Make top-level groups draggable
+    svgEl.querySelectorAll(":scope > g, :scope > rect, :scope > image").forEach(el => {
+      el.style.cursor = "move";
+      addDrag(el, svgEl, slideUrl);
+    });
+
+    // Text elements: click to edit
+    svgEl.querySelectorAll("text").forEach(el => {
+      el.style.cursor = "text";
       el.addEventListener("click", e => {
         e.stopPropagation();
         svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
         el.classList.add("svg-selected");
-        state._selectedElement = el.textContent?.trim().slice(0, 60);
+        showTextEditor(el, svgEl, container, slideUrl);
         const aiInput = $("#aiInput");
-        if (aiInput) aiInput.placeholder = `Edit: "${state._selectedElement}"…`;
-      });
-      el.addEventListener("dblclick", e => {
-        e.stopPropagation();
-        el.setAttribute("contenteditable", "true");
-        el.focus();
-        el.style.outline = "none";
-        const range = document.createRange();
-        range.selectNodeContents(el);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-        function commitEdit() {
-          el.removeAttribute("contenteditable");
-          el.blur();
-          // Serialize updated SVG and save
-          const serializer = new XMLSerializer();
-          const updatedSvg = serializer.serializeToString(svgEl);
-          const slides = state.data?.slides || [];
-          const slide = slides[state.activeSlide];
-          if (slide) {
-            fetch(slide.url, {method:"PUT", headers:{"Content-Type":"image/svg+xml"}, body: updatedSvg})
-              .catch(() => {}); // best-effort; server may not support PUT
-          }
-        }
-        el.addEventListener("blur", commitEdit, {once: true});
-        el.addEventListener("keydown", e2 => {
-          if (e2.key === "Enter" && !e2.shiftKey) { e2.preventDefault(); commitEdit(); }
-          if (e2.key === "Escape") { el.removeAttribute("contenteditable"); }
-        });
+        if (aiInput) aiInput.placeholder = `Editing: "${el.textContent?.trim().slice(0,40)}"…`;
       });
     });
-    // Click non-text shapes to select + note in AI sidebar
-    svgEl.querySelectorAll("rect, circle, path, image, g[id]").forEach(el => {
-      if (el.closest("text")) return;
-      el.style.cursor = "pointer";
-      el.addEventListener("click", e => {
-        e.stopPropagation();
-        svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
-        el.classList.add("svg-selected");
-        state._selectedElement = el.id || el.tagName;
-        const aiInput = $("#aiInput");
-        if (aiInput) aiInput.placeholder = `Edit element "${state._selectedElement}"…`;
-      });
-    });
-    // Deselect on background click
+
+    // Deselect on background
     svgEl.addEventListener("click", () => {
       svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
-      state._selectedElement = null;
       const aiInput = $("#aiInput");
       if (aiInput) aiInput.placeholder = "Describe an edit…";
     });
+
   } catch (err) {
     container.innerHTML = `<div style="color:var(--text-3);padding:40px;text-align:center">Failed to load slide</div>`;
   }
