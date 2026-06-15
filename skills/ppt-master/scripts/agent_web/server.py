@@ -133,7 +133,14 @@ class StudioRuntime:
                 self._reconcile_artifact_state()
             self._emit("state", state=self.state_payload())
 
-    def start_new_project(self, brief: str) -> tuple[str, dict[str, Any]]:
+    def start_new_project(
+        self,
+        brief: str,
+        slide_count: int = 0,
+        audience: str = "",
+        tone: str = "",
+        template: str = "",
+    ) -> tuple[str, dict[str, Any]]:
         with self.lock:
             if self.task["status"] == "running":
                 raise RuntimeError("Wait for the active agent turn to finish.")
@@ -144,9 +151,31 @@ class StudioRuntime:
                 self.repo_root / ".ppt-master-agent" / "drafts" / self.draft_id
             )
             self.agent = self._new_agent(draft_dir)
+        params: list[str] = []
+        if slide_count:
+            params.append(f"Target slide count: {slide_count}")
+        if audience:
+            params.append(f"Target audience: {audience}")
+        if tone:
+            params.append(f"Tone / style: {tone}")
+        if template:
+            params.append(f"Use layout template: {template}")
+        param_block = "\n".join(params)
+        full_request = f"{brief}\n\n[Parameters:\n{param_block}]" if params else brief
+        outline_instruction = (
+            "\n\nAfter creating design_spec.md and spec_lock.md, ALSO write a file named "
+            "'outline.json' in the project root using this exact JSON structure:\n"
+            '{"title":"<deck title>","slides":[{"index":1,"title":"<slide title>",'
+            '"purpose":"<one sentence describing what this slide achieves>",'
+            '"key_points":["point 1","point 2"],'
+            '"layout":"cover|section|content|closing"}]}\n'
+            "Include every planned slide. Valid layout values: cover, section, content, closing.\n"
+            "Then STOP — do not generate SVG slides yet."
+        )
         task_id = self.start_turn(
-            "Create a new PPT Master project from this request, then "
-            f"continue through the workflow gates: {brief}"
+            "Create a new PPT Master project from this request. Run the Strategist role "
+            "to produce design_spec.md and spec_lock.md, write outline.json, then stop.\n\n"
+            f"Request: {full_request}{outline_instruction}"
         )
         return task_id, self.state_payload()
 
@@ -207,6 +236,7 @@ class StudioRuntime:
                 )
                 with self.lock:
                     self._sync_project_from_agent()
+                    self._reconcile_artifact_state()
                     continue_text = self._next_bounded_step()
                     self.task.update({
                         "status": "complete",
@@ -229,7 +259,33 @@ class StudioRuntime:
 
     def _next_bounded_step(self) -> str:
         project = self.active_project
-        if not project or self.agent.state.phase != "executing_slides":
+        if not project:
+            return ""
+        state = self.agent.state
+        manifest = project / "images" / "image_prompts.json"
+        if state.phase == "strategy_locked":
+            if self.config.image_mode == "enabled":
+                if not manifest.is_file():
+                    return (
+                        "Create images/image_prompts.json in required manifest "
+                        "format from design_spec.md section VIII. Include every "
+                        "AI image marked Pending. Then run image_gen with "
+                        f"--manifest {manifest}. Do not merely describe the step."
+                    )
+                return (
+                    "Run image_gen now with --manifest "
+                    f"{manifest}. Wait for all Novita tasks to finish. "
+                    "Do not merely announce that image generation is starting."
+                )
+            state.transition("assets_ready")
+            state.save(self.agent.session.state_path)
+        if state.phase == "assets_ready":
+            return (
+                "Begin slide execution. Advance to executing_slides, then "
+                "generate only slide 01 from the approved outline. Read "
+                "spec_lock.md immediately before writing it."
+            )
+        if state.phase != "executing_slides":
             return ""
         expected = self.agent.tools._expected_slide_count()
         actual = len(_list_slides(project))
@@ -298,10 +354,27 @@ class StudioRuntime:
                 and self.config.image_mode == "disabled"
             ):
                 state.transition("assets_ready")
+            if state.phase == "strategy_locked" and self.config.image_mode == "enabled":
+                manifest = project / "images" / "image_prompts.json"
+                if self._manifest_complete(manifest):
+                    state.transition("assets_ready")
         slides = _list_slides(project)
         if slides and state.phase == "assets_ready":
             state.transition("executing_slides")
         state.save(self.agent.session.state_path)
+
+    @staticmethod
+    def _manifest_complete(path: Path) -> bool:
+        if not path.is_file():
+            return False
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        items = data.get("items") or []
+        return bool(items) and all(
+            item.get("status") == "Generated" for item in items
+        )
 
     def state_payload(self) -> dict[str, Any]:
         with self.lock:
@@ -428,6 +501,84 @@ def create_app(
         except (OSError, RuntimeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 400
 
+    @app.get("/api/templates")
+    def api_templates():
+        decks_root = repo_root / "skills" / "ppt-master" / "templates" / "decks"
+        index_path = decks_root / "decks_index.json"
+        if not index_path.is_file():
+            return jsonify([])
+        try:
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return jsonify([])
+        result = []
+        for name, meta in index.items():
+            deck_dir = decks_root / name
+            slides: list[str] = []
+            if deck_dir.is_dir():
+                for svg_file in sorted(deck_dir.glob("*.svg"))[:5]:
+                    encoded = svg_file.name.replace(" ", "%20")
+                    slides.append(
+                        f"/api/template-svg/{name.replace(' ', '%20')}/{encoded}"
+                    )
+            result.append({
+                "id": name,
+                "name": name,
+                "summary": meta.get("summary", ""),
+                "primary_color": meta.get("primary_color", "#4F46E5"),
+                "canvas_format": meta.get("canvas_format", "ppt169"),
+                "slides": slides,
+            })
+        return jsonify(result)
+
+    @app.get("/api/template-svg/<path:template_path>")
+    def api_template_svg(template_path: str):
+        decks_root = (
+            repo_root / "skills" / "ppt-master" / "templates" / "decks"
+        ).resolve()
+        candidate = (decks_root / template_path).resolve()
+        try:
+            candidate.relative_to(decks_root)
+        except ValueError:
+            return jsonify({"error": "Invalid path"}), 400
+        if not candidate.is_file() or candidate.suffix.lower() != ".svg":
+            return jsonify({"error": "Not found"}), 404
+        return send_file(candidate, mimetype="image/svg+xml")
+
+    @app.get("/api/workflow/outline")
+    def api_workflow_outline():
+        if not runtime.active_project:
+            return jsonify({"error": "No active project"}), 404
+        outline_path = runtime.active_project / "outline.json"
+        if not outline_path.is_file():
+            return jsonify({"error": "Outline not ready"}), 404
+        try:
+            data = json.loads(outline_path.read_text(encoding="utf-8"))
+            return jsonify(data)
+        except (OSError, json.JSONDecodeError) as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.patch("/api/workflow/outline")
+    def api_workflow_outline_update():
+        if not runtime.active_project:
+            return jsonify({"error": "No active project"}), 404
+        outline_path = runtime.active_project / "outline.json"
+        if not outline_path.is_file():
+            return jsonify({"error": "Outline not ready"}), 404
+        body = request.get_json(silent=True) or {}
+        try:
+            outline = json.loads(outline_path.read_text(encoding="utf-8"))
+            if "slides" in body:
+                outline["slides"] = body["slides"]
+            if "title" in body:
+                outline["title"] = body["title"]
+            outline_path.write_text(
+                json.dumps(outline, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            return jsonify(outline)
+        except (OSError, json.JSONDecodeError) as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.post("/api/projects/new")
     def api_new_project():
         data = request.get_json(silent=True) or {}
@@ -435,7 +586,13 @@ def create_app(
         if not brief:
             return jsonify({"error": "A presentation brief is required."}), 400
         try:
-            task_id, state = runtime.start_new_project(brief)
+            task_id, state = runtime.start_new_project(
+                brief,
+                slide_count=int(data.get("slide_count") or 0),
+                audience=str(data.get("audience") or "").strip(),
+                tone=str(data.get("tone") or "").strip(),
+                template=str(data.get("template") or "").strip(),
+            )
             return jsonify({"task_id": task_id, "state": state}), 202
         except (RuntimeError, ValueError) as exc:
             return jsonify({"error": str(exc)}), 409

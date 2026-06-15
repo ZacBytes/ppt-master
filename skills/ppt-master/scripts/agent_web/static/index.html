@@ -3,236 +3,461 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
   <title>PPT Master Studio</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 32' fill='none' stroke='%23a7c7ff' stroke-width='3' stroke-linecap='round'><rect x='2' y='2' width='44' height='28' rx='4'/><path d='M10 11h15M10 17h26M10 23h19'/></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 32' fill='none' stroke='%234F46E5' stroke-width='3' stroke-linecap='round'><rect x='2' y='2' width='44' height='28' rx='4'/><path d='M10 11h15M10 17h26M10 23h19'/></svg>">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
-  <div class="noise"></div>
+  <div id="app">
 
-  <div class="app-shell">
-    <aside class="rail" id="rail">
-      <div class="brand">
-        <div class="brand-mark">
-          <svg viewBox="0 0 48 32" aria-hidden="true">
-            <rect x="2" y="2" width="44" height="28" rx="4"></rect>
-            <path d="M10 11h15M10 17h26M10 23h19"></path>
+    <!-- ─── SIDEBAR ─────────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 48 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <rect x="2" y="2" width="44" height="28" rx="4"/>
+            <path d="M10 11h15M10 17h26M10 23h19"/>
           </svg>
         </div>
-        <div>
+        <div class="brand-text">
           <strong>PPT Master</strong>
           <span>Studio</span>
         </div>
       </div>
 
-      <button class="primary-action" id="newProjectButton">
-        <span class="plus">+</span>
+      <button class="btn-new-project" id="btnNewProject">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M10 4v12M4 10h12"/>
+        </svg>
         New presentation
       </button>
 
-      <div class="rail-section">
-        <div class="section-label">
-          <span>Projects</span>
-          <button class="icon-button" id="refreshProjects" title="Refresh">↻</button>
+      <div class="sidebar-section">
+        <div class="sidebar-section-header">
+          <span>Recent projects</span>
+          <button class="btn-icon" id="btnRefresh" title="Refresh">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 12a6 6 0 1 0 1.2-3.6M4 8v4h4"/>
+            </svg>
+          </button>
         </div>
         <div class="project-list" id="projectList">
-          <div class="skeleton project-skeleton"></div>
-          <div class="skeleton project-skeleton"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
         </div>
       </div>
 
-      <div class="rail-footer">
-        <div class="connection-card">
-          <span class="status-dot" id="connectionDot"></span>
-          <div>
-            <strong id="connectionLabel">Connecting</strong>
-            <span id="modelLabel">OpenRouter</span>
+      <div class="sidebar-footer">
+        <div class="conn-pill" id="connPill">
+          <span class="conn-dot" id="connDot"></span>
+          <div class="conn-text">
+            <strong id="connLabel">Connecting</strong>
+            <span id="modelLabel">—</span>
           </div>
         </div>
-        <button class="rail-link" id="settingsButton">
-          <span>⌘</span>
-          Runtime settings
+        <button class="btn-sidebar-link" id="btnSettings">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="10" cy="10" r="3"/>
+            <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"/>
+          </svg>
+          Settings
         </button>
       </div>
     </aside>
 
-    <main class="workspace">
-      <header class="topbar">
-        <button class="mobile-menu" id="mobileMenu" aria-label="Open projects">☰</button>
-        <div class="project-heading">
-          <div class="eyebrow" id="projectEyebrow">LOCAL WORKSPACE</div>
-          <h1 id="projectTitle">Create something worth presenting</h1>
-        </div>
-        <div class="topbar-actions">
-          <div class="mode-pill">
-            <span class="mode-light"></span>
-            <span id="imageModeLabel">SVG-native</span>
-          </div>
-          <button class="secondary-button" id="previewButton">Open preview</button>
-          <button class="export-button" id="exportButton">Export deck</button>
-        </div>
-      </header>
+    <!-- ─── MOBILE OVERLAY ───────────────────────────────────────── -->
+    <div class="sidebar-overlay hidden" id="sidebarOverlay"></div>
 
-      <section class="stage-grid">
-        <section class="conversation-panel panel">
-          <div class="conversation-head">
-            <div>
-              <span class="kicker">CREATIVE DIRECTION</span>
-              <h2>Build with the agent</h2>
+    <!-- ─── MAIN ─────────────────────────────────────────────────── -->
+    <main class="main" id="main">
+
+      <!-- Mobile topbar -->
+      <div class="mobile-topbar">
+        <button class="btn-hamburger" id="btnHamburger">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 5h14M3 10h14M3 15h14"/>
+          </svg>
+        </button>
+        <span class="mobile-brand">PPT Master</span>
+        <div class="mobile-actions">
+          <button class="btn-ghost-sm" id="btnExportMobile">Export</button>
+        </div>
+      </div>
+
+      <!-- ─── WELCOME SCREEN (no project) ─────────────────────────── -->
+      <div class="welcome-screen" id="welcomeScreen">
+        <div class="welcome-hero">
+          <div class="welcome-icon">
+            <svg viewBox="0 0 48 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <rect x="2" y="2" width="44" height="28" rx="4"/>
+              <path d="M10 11h15M10 17h26M10 23h19"/>
+            </svg>
+          </div>
+          <h1>Turn ideas into presentations</h1>
+          <p>Describe your topic, choose a template, and the studio builds a complete editable deck — strategy, slides, and export in one flow.</p>
+          <button class="btn-primary btn-lg" id="btnWelcomeNew">
+            Create first presentation
+          </button>
+        </div>
+        <div class="welcome-examples">
+          <button class="example-card" data-prompt="A 12-slide investor update for our Q2 board meeting. Senior leadership audience. Focus on growth, retention, and strategic bets.">
+            <span class="example-emoji">📊</span>
+            <strong>Board update</strong>
+            <span>Metrics, decisions, strategic direction</span>
+          </button>
+          <button class="example-card" data-prompt="A visually rich product launch presentation for a new mobile app. Target: general consumer audience. Tone: energetic and modern.">
+            <span class="example-emoji">🚀</span>
+            <strong>Product launch</strong>
+            <span>Bold story, memorable visuals</span>
+          </button>
+          <button class="example-card" data-prompt="A research readout presenting survey findings on remote work trends. Academic audience. Clear evidence, elegant clarity.">
+            <span class="example-emoji">🔬</span>
+            <strong>Research readout</strong>
+            <span>Evidence-first, clear and credible</span>
+          </button>
+          <button class="example-card" data-prompt="A training deck explaining our onboarding process for new hires. Friendly, step-by-step, approachable tone. About 10 slides.">
+            <span class="example-emoji">📚</span>
+            <strong>Training deck</strong>
+            <span>Step-by-step, approachable</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ─── PROJECT VIEW ──────────────────────────────────────────── -->
+      <div class="project-view hidden" id="projectView">
+
+        <!-- Project topbar -->
+        <header class="project-topbar">
+          <button class="btn-hamburger desktop-hidden" id="btnHamburger2">
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M3 5h14M3 10h14M3 15h14"/>
+            </svg>
+          </button>
+          <div class="project-meta">
+            <span class="project-eyebrow" id="projectEyebrow">ACTIVE PROJECT</span>
+            <h1 class="project-title" id="projectTitle">Untitled</h1>
+          </div>
+
+          <!-- Step indicator -->
+          <nav class="step-nav" id="stepNav">
+            <div class="step-item active" data-step="create">
+              <div class="step-num">1</div>
+              <span>Create</span>
             </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="outline">
+              <div class="step-num">2</div>
+              <span>Outline</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="assets">
+              <div class="step-num">3</div>
+              <span>Assets</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="build">
+              <div class="step-num">4</div>
+              <span>Build</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="export">
+              <div class="step-num">5</div>
+              <span>Export</span>
+            </div>
+          </nav>
+
+          <div class="topbar-right">
             <div class="thinking-chip hidden" id="thinkingChip">
-              <span></span><span></span><span></span>
-              Working
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span id="thinkingLabel">Working</span>
             </div>
+            <button class="btn-ghost" id="btnExportTop">Export PPTX</button>
           </div>
+        </header>
 
-          <div class="welcome" id="welcomeState">
-            <div class="welcome-orbit">
-              <div class="orbit-line orbit-one"></div>
-              <div class="orbit-line orbit-two"></div>
-              <div class="welcome-glyph">P</div>
-            </div>
-            <span class="kicker">FROM SOURCE TO SLIDES</span>
-            <h2>Turn your thinking into an editable deck.</h2>
-            <p>Drop in a document or describe the story. The studio handles strategy, structure, visual construction, quality checks, and export.</p>
-            <div class="starter-grid">
-              <button class="starter-card" data-prompt="Create an executive strategy deck from my uploaded source.">
-                <span class="starter-icon">↗</span>
-                <strong>Executive strategy</strong>
-                <small>Sharp narrative, clear decisions</small>
-              </button>
-              <button class="starter-card" data-prompt="Create a visually rich product launch presentation from my brief.">
-                <span class="starter-icon">✦</span>
-                <strong>Product launch</strong>
-                <small>Bold visuals, memorable moments</small>
-              </button>
-              <button class="starter-card" data-prompt="Create a concise research presentation from my uploaded material.">
-                <span class="starter-icon">◎</span>
-                <strong>Research readout</strong>
-                <small>Evidence first, elegant clarity</small>
-              </button>
-            </div>
-          </div>
+        <!-- ─── STEP: CREATE ───────────────────────────────────────── -->
+        <section class="step-panel" id="panelCreate">
+          <div class="create-layout">
+            <div class="create-left">
+              <div class="panel-card">
+                <h2 class="panel-card-title">Describe your presentation</h2>
 
-          <div class="message-stream" id="messageStream"></div>
+                <div class="form-group">
+                  <label class="form-label" for="topicInput">Topic or brief</label>
+                  <textarea class="form-textarea" id="topicInput" rows="4"
+                    placeholder="Example: A 12-slide investor update for our Q2 board meeting. Audience is senior leadership. Focus on growth, retention, and the next two strategic bets…"></textarea>
+                </div>
 
-          <div class="confirm-card hidden" id="confirmCard">
-            <div class="confirm-art">
-              <span></span><span></span><span></span>
-            </div>
-            <div>
-              <span class="kicker">STRATEGY READY</span>
-              <strong>Review the Eight Confirmations</strong>
-              <p>Approve the direction to continue into slide production.</p>
-            </div>
-            <button id="confirmButton">Confirm direction</button>
-          </div>
+                <div class="form-group">
+                  <label class="form-label">
+                    Source files
+                    <span class="label-hint">optional</span>
+                  </label>
+                  <div class="drop-zone" id="createDropZone">
+                    <input type="file" multiple id="createFileInput" class="drop-input">
+                    <div class="drop-content">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/>
+                      </svg>
+                      <span>Drop files or <label for="createFileInput" class="drop-browse">browse</label></span>
+                      <small>PDF, DOCX, PPTX, XLSX, images up to 100 MB</small>
+                    </div>
+                  </div>
+                  <div class="upload-tray" id="createUploadTray"></div>
+                </div>
 
-          <div class="composer-wrap">
-            <div class="upload-tray hidden" id="uploadTray"></div>
-            <div class="composer" id="composer">
-              <label class="attach-button" for="fileInput" title="Attach local files">
-                <span>+</span>
-                <input id="fileInput" type="file" multiple>
-              </label>
-              <textarea id="messageInput" rows="1" placeholder="Describe the presentation or attach source material…"></textarea>
-              <button class="send-button" id="sendButton" aria-label="Send">
-                <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
-              </button>
+                <div class="config-grid">
+                  <div class="config-item">
+                    <label class="form-label" for="slideCountSelect">Slides</label>
+                    <select class="form-select" id="slideCountSelect">
+                      <option value="8">~8</option>
+                      <option value="12" selected>~12</option>
+                      <option value="16">~16</option>
+                      <option value="20">~20</option>
+                    </select>
+                  </div>
+                  <div class="config-item">
+                    <label class="form-label" for="audienceInput">Audience</label>
+                    <input class="form-input" type="text" id="audienceInput" placeholder="e.g. senior leadership">
+                  </div>
+                  <div class="config-item">
+                    <label class="form-label" for="toneSelect">Tone</label>
+                    <select class="form-select" id="toneSelect">
+                      <option>Professional</option>
+                      <option>Technical</option>
+                      <option>Friendly</option>
+                      <option>Academic</option>
+                      <option>Bold</option>
+                    </select>
+                  </div>
+                  <div class="config-item">
+                    <label class="form-label">AI images</label>
+                    <button class="toggle-btn" id="imageToggle" data-on="false" aria-pressed="false">
+                      <span class="toggle-track">
+                        <span class="toggle-thumb"></span>
+                      </span>
+                      <span class="toggle-label" id="imageToggleLabel">Off</span>
+                    </button>
+                  </div>
+                </div>
+
+                <button class="btn-primary btn-create" id="btnCreate">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10 4v12M4 10h12"/>
+                  </svg>
+                  Generate presentation
+                </button>
+              </div>
             </div>
-            <div class="composer-meta">
-              <span>Local files only · no web search</span>
-              <span><kbd>Enter</kbd> send · <kbd>Shift</kbd> + <kbd>Enter</kbd> newline</span>
+
+            <div class="create-right">
+              <div class="panel-card template-card-outer">
+                <h2 class="panel-card-title">Template <span class="label-hint">optional</span></h2>
+                <div class="template-grid" id="templateGrid">
+                  <!-- Free Design always first -->
+                  <button class="template-item selected" data-template="" id="templateFreeDesign">
+                    <div class="template-preview free-design-preview">
+                      <div class="fd-slide">
+                        <div class="fd-bar" style="width:55%;background:#4F46E5"></div>
+                        <div class="fd-bar" style="width:80%;background:#E2E8F0"></div>
+                        <div class="fd-bar" style="width:65%;background:#E2E8F0"></div>
+                      </div>
+                    </div>
+                    <div class="template-meta">
+                      <span class="template-color-dot" style="background: linear-gradient(135deg,#4F46E5,#7C3AED)"></span>
+                      <span class="template-name">Free Design</span>
+                    </div>
+                  </button>
+                  <!-- More loaded by JS -->
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        <aside class="production-panel panel">
-          <div class="production-head">
+        <!-- ─── STEP: OUTLINE ─────────────────────────────────────── -->
+        <section class="step-panel hidden" id="panelOutline">
+          <div class="outline-topbar">
             <div>
-              <span class="kicker">PRODUCTION</span>
-              <h2>Deck progress</h2>
+              <h2 class="section-title">Review your outline</h2>
+              <p class="section-sub">Edit slide titles, purpose, and key points. Reorder or add slides before building.</p>
             </div>
-            <span class="phase-badge" id="phaseBadge">Source</span>
-          </div>
-
-          <div class="phase-track" id="phaseTrack"></div>
-
-          <div class="preview-shell" id="previewShell">
-            <div class="preview-empty" id="previewEmpty">
-              <div class="preview-stack">
-                <span></span><span></span><span></span>
+            <div class="outline-actions">
+              <div class="generating-status hidden" id="outlineGenerating">
+                <div class="spinner"></div>
+                <span>Generating outline…</span>
               </div>
-              <strong>Your deck will appear here</strong>
-              <p>Slides arrive one by one as the Executor builds them.</p>
-            </div>
-            <iframe class="preview-frame hidden" id="previewFrame" title="Live slide editor"></iframe>
-            <div class="slide-canvas hidden" id="slideCanvas">
-              <img id="activeSlideImage" alt="Generated slide preview">
-            </div>
-          </div>
-
-          <div class="slide-toolbar hidden" id="slideToolbar">
-            <button id="previousSlide">←</button>
-            <span id="slideCounter">1 / 1</span>
-            <button id="nextSlide">→</button>
-            <button class="toolbar-wide" id="editorButton">Edit in live preview</button>
-          </div>
-
-          <div class="filmstrip" id="filmstrip"></div>
-
-          <div class="production-stats">
-            <div>
-              <span>Slides</span>
-              <strong id="slideCount">0</strong>
-            </div>
-            <div>
-              <span>Tokens</span>
-              <strong id="tokenCount">0</strong>
-            </div>
-            <div>
-              <span>Images</span>
-              <strong id="imageModeStat">Off</strong>
+              <button class="btn-secondary" id="btnAddSlide">+ Add slide</button>
+              <button class="btn-primary" id="btnApproveOutline" disabled>
+                Build presentation
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 10h12M10 4l6 6-6 6"/>
+                </svg>
+              </button>
             </div>
           </div>
+          <div class="outline-list" id="outlineList">
+            <!-- Slide cards injected by JS -->
+          </div>
+        </section>
 
-          <div class="export-list" id="exportList"></div>
-        </aside>
-      </section>
+        <!-- ─── STEP: ASSETS ──────────────────────────────────────── -->
+        <section class="step-panel hidden" id="panelAssets">
+          <div class="assets-topbar">
+            <div>
+              <h2 class="section-title">Image assets</h2>
+              <p class="section-sub">Review the AI-generated images for your presentation.</p>
+            </div>
+            <div class="assets-actions">
+              <div class="generating-status" id="assetsGenerating">
+                <div class="spinner"></div>
+                <span>Generating images…</span>
+              </div>
+              <button class="btn-secondary" id="btnSkipAssets">Skip all images</button>
+              <button class="btn-primary" id="btnProceedAssets" disabled>
+                Continue to build
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 10h12M10 4l6 6-6 6"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="assets-grid" id="assetsGrid">
+            <!-- Asset cards injected by JS -->
+          </div>
+        </section>
+
+        <!-- ─── STEP: BUILD ───────────────────────────────────────── -->
+        <section class="step-panel build-panel hidden" id="panelBuild">
+          <div class="build-layout">
+
+            <!-- Left: canvas + filmstrip -->
+            <div class="build-left">
+              <div class="build-progress-bar hidden" id="buildProgressBar">
+                <div class="build-progress-fill" id="buildProgressFill"></div>
+                <span id="buildProgressLabel">Building…</span>
+              </div>
+
+              <div class="slide-canvas-wrap">
+                <div class="canvas-empty" id="canvasEmpty">
+                  <div class="canvas-empty-anim">
+                    <div class="anim-slide anim-slide-1"></div>
+                    <div class="anim-slide anim-slide-2"></div>
+                    <div class="anim-slide anim-slide-3"></div>
+                  </div>
+                  <strong>Slides building…</strong>
+                  <p>They'll appear here as they're generated.</p>
+                </div>
+                <iframe class="preview-frame hidden" id="previewFrame" title="Live slide editor"></iframe>
+                <img class="slide-img hidden" id="activeSlideImg" alt="Current slide">
+              </div>
+
+              <div class="canvas-controls">
+                <button class="btn-icon-round" id="btnPrevSlide">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 4l-8 6 8 6"/>
+                  </svg>
+                </button>
+                <span class="slide-counter" id="slideCounter">0 / 0</span>
+                <button class="btn-icon-round" id="btnNextSlide">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 4l8 6-8 6"/>
+                  </svg>
+                </button>
+                <div class="canvas-controls-right">
+                  <button class="btn-ghost" id="btnOpenEditor">Open editor</button>
+                  <button class="btn-primary" id="btnExportBuild">Export PPTX</button>
+                </div>
+              </div>
+
+              <div class="filmstrip" id="filmstrip"></div>
+            </div>
+
+            <!-- Right: AI edit sidebar -->
+            <div class="ai-sidebar" id="aiSidebar">
+              <div class="ai-sidebar-header">
+                <span>AI Edits</span>
+                <button class="btn-icon" id="btnCloseSidebar">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M5 5l10 10M15 5L5 15"/>
+                  </svg>
+                </button>
+              </div>
+              <div class="scope-selector">
+                <button class="scope-btn active" data-scope="slide">This slide</button>
+                <button class="scope-btn" data-scope="deck">Full deck</button>
+              </div>
+              <div class="ai-messages" id="aiMessages"></div>
+              <div class="ai-composer">
+                <textarea class="ai-input" id="aiInput" rows="2" placeholder="Describe an edit…"></textarea>
+                <button class="btn-primary" id="btnAiSend">
+                  <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 10h12M10 4l6 6-6 6"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Toggle button when sidebar is closed -->
+            <button class="ai-toggle-btn hidden" id="btnOpenSidebar">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M3 6h14M3 10h10M3 14h7"/>
+              </svg>
+              AI Edits
+            </button>
+          </div>
+        </section>
+
+        <!-- ─── STEP: EXPORT ──────────────────────────────────────── -->
+        <section class="step-panel hidden" id="panelExport">
+          <div class="export-layout">
+            <div class="export-hero">
+              <div class="export-check">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </div>
+              <h2>Your deck is ready</h2>
+              <p>Download below or open the live editor to keep refining.</p>
+              <div class="export-hero-actions">
+                <button class="btn-ghost" id="btnOpenEditorExport">Open editor</button>
+              </div>
+            </div>
+            <div class="exports-list" id="exportsList"></div>
+          </div>
+        </section>
+
+      </div><!-- /project-view -->
+
     </main>
   </div>
 
-  <div class="modal-backdrop hidden" id="newProjectModal">
-    <div class="modal">
-      <button class="modal-close" data-close-modal>×</button>
-      <span class="kicker">NEW PRESENTATION</span>
-      <h2>What are we making?</h2>
-      <p>Give the agent enough substance to work without web research. You can attach source files after creation.</p>
-      <textarea id="newProjectBrief" rows="6" placeholder="Example: A 12-slide investor update for our Q2 board meeting. Audience is senior leadership. Focus on growth, retention, and the next two strategic bets…"></textarea>
-      <div class="modal-actions">
-        <button class="secondary-button" data-close-modal>Cancel</button>
-        <button class="primary-action" id="createProjectButton">Create presentation</button>
-      </div>
-    </div>
-  </div>
-
+  <!-- ─── SETTINGS MODAL ───────────────────────────────────────────── -->
   <div class="modal-backdrop hidden" id="settingsModal">
-    <div class="modal settings-modal">
-      <button class="modal-close" data-close-settings>×</button>
-      <span class="kicker">RUNTIME</span>
-      <h2>Local agent settings</h2>
-      <div class="setting-row"><span>Model</span><strong id="settingsModel"></strong></div>
-      <div class="setting-row"><span>Image generation</span><strong id="settingsImages"></strong></div>
-      <div class="setting-row"><span>Web search</span><strong>Unavailable</strong></div>
-      <div class="setting-row"><span>API key</span><strong id="settingsKey"></strong></div>
-      <p class="settings-note">Settings come from the repository’s ignored <code>.env</code> file. Restart the studio after changing them.</p>
+    <div class="modal">
+      <button class="modal-close" id="btnCloseSettings">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M5 5l10 10M15 5L5 15"/>
+        </svg>
+      </button>
+      <span class="modal-eyebrow">RUNTIME</span>
+      <h2 class="modal-title">Settings</h2>
+      <div class="settings-list">
+        <div class="setting-row"><span>Model</span><strong id="settingsModel">—</strong></div>
+        <div class="setting-row"><span>Image generation</span><strong id="settingsImages">—</strong></div>
+        <div class="setting-row"><span>API key</span><strong id="settingsKey">—</strong></div>
+        <div class="setting-row"><span>Web search</span><strong>Unavailable</strong></div>
+      </div>
+      <p class="settings-note">Settings come from the repository's <code>.env</code> file. Restart the studio after changing them.</p>
     </div>
   </div>
 
+  <!-- ─── TOAST REGION ─────────────────────────────────────────────── -->
   <div class="toast-region" id="toastRegion"></div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

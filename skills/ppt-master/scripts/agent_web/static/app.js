@@ -1,571 +1,892 @@
+/* ─── State ──────────────────────────────────────────────────────────── */
 const state = {
   data: null,
-  uploads: [],
+  taskStatus: "idle",
+  wfStep: "create",        // create | outline | assets | build | export
   activeSlide: 0,
+  uploads: [],             // local paths returned from /api/upload
+  outline: null,           // parsed outline.json
+  outlinePollTimer: null,
+  templates: [],
+  selectedTemplate: "",
+  imageOn: false,
+  aiScope: "slide",        // slide | deck
   eventSource: null,
-  reconnectTimer: null,
+  // streaming
   streamingNode: null,
   streamingText: "",
-  lastMessageCount: 0,
-  messageSignature: "",
-  projectSignature: "",
-  phaseSignature: "",
-  previewSignature: "",
-  exportSignature: "",
-  taskStatus: "idle",
+  // render signatures
+  sigs: { projects: "", slides: "", exports: "" },
 };
 
-const $ = (selector) => document.querySelector(selector);
-const $$ = (selector) => [...document.querySelectorAll(selector)];
+/* ─── Helpers ────────────────────────────────────────────────────────── */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => [...document.querySelectorAll(sel)];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = bytes => bytes < 1048576 ? `${Math.max(1,Math.round(bytes/1024))} KB` : `${(bytes/1048576).toFixed(1)} MB`;
 
-const elements = {
-  rail: $("#rail"),
-  projectList: $("#projectList"),
-  projectTitle: $("#projectTitle"),
-  projectEyebrow: $("#projectEyebrow"),
-  connectionDot: $("#connectionDot"),
-  connectionLabel: $("#connectionLabel"),
-  modelLabel: $("#modelLabel"),
-  imageModeLabel: $("#imageModeLabel"),
-  welcome: $("#welcomeState"),
-  stream: $("#messageStream"),
-  messageInput: $("#messageInput"),
-  sendButton: $("#sendButton"),
-  thinkingChip: $("#thinkingChip"),
-  confirmCard: $("#confirmCard"),
-  uploadTray: $("#uploadTray"),
-  phaseTrack: $("#phaseTrack"),
-  phaseBadge: $("#phaseBadge"),
-  previewEmpty: $("#previewEmpty"),
-  previewFrame: $("#previewFrame"),
-  slideCanvas: $("#slideCanvas"),
-  activeSlideImage: $("#activeSlideImage"),
-  slideToolbar: $("#slideToolbar"),
-  slideCounter: $("#slideCounter"),
-  filmstrip: $("#filmstrip"),
-  slideCount: $("#slideCount"),
-  tokenCount: $("#tokenCount"),
-  imageModeStat: $("#imageModeStat"),
-  exportList: $("#exportList"),
-};
-
-async function api(path, options = {}) {
-  const response = await fetch(path, {
-    headers: options.body instanceof FormData ? undefined : {"Content-Type": "application/json"},
-    ...options,
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    headers: opts.body instanceof FormData ? undefined : {"Content-Type":"application/json"},
+    ...opts,
   });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || `Request failed (${response.status})`);
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(payload.error || `Request failed (${res.status})`);
   return payload;
 }
 
-async function refreshState({silent = true} = {}) {
-  try {
-    const data = await api("/api/state");
-    const previousTask = state.taskStatus;
-    state.data = data;
-    state.taskStatus = data.task.status;
-    render(data);
-    if (previousTask === "running" && data.task.status === "complete") {
-      toast("Agent turn complete");
-    }
-    if (data.task.status === "error" && previousTask !== "error") {
-      toast(data.task.error || "The agent turn failed.", true);
-    }
-  } catch (error) {
-    renderConnection(false);
-    if (!silent) toast(error.message, true);
-  }
+function phaseToStep(phase) {
+  if (!phase) return "create";
+  const map = {
+    source_input: "create",
+    project_initialized: "create",
+    template_resolved: "create",
+    awaiting_confirmations: "outline",
+    strategy_locked: "assets",
+    assets_ready: "build",
+    executing_slides: "build",
+    quality_checked: "build",
+    post_processing: "build",
+    exported: "export",
+  };
+  return map[phase] ?? "create";
 }
 
+/* ─── SSE connection ─────────────────────────────────────────────────── */
 function connectEvents() {
   if (state.eventSource) state.eventSource.close();
-  const source = new EventSource("/api/events");
-  state.eventSource = source;
-  source.onopen = () => renderConnection(true);
-  source.onerror = () => {
-    renderConnection(false);
-  };
-  source.addEventListener("assistant_start", () => beginStreamingMessage());
-  source.addEventListener("assistant_delta", event => {
-    const payload = JSON.parse(event.data);
-    appendStreamingText(payload.text || "");
+  const es = new EventSource("/api/events");
+  state.eventSource = es;
+
+  es.onopen = () => setOnline(true);
+  es.onerror = () => setOnline(false);
+
+  es.addEventListener("assistant_start", () => beginAiStream());
+  es.addEventListener("assistant_delta", e => appendAiStream(JSON.parse(e.data).text || ""));
+  es.addEventListener("assistant_done", e => finishAiStream(JSON.parse(e.data).content || state.streamingText));
+  es.addEventListener("tool_start", e => setThinking(`Running ${friendlyTool(JSON.parse(e.data).name)}…`));
+  es.addEventListener("tool_done", () => setThinking("Working"));
+  es.addEventListener("llm_retry", e => {
+    const {attempt, delay} = JSON.parse(e.data);
+    setThinking(`Retry ${attempt}/4 in ${Math.ceil(delay)}s`);
   });
-  source.addEventListener("assistant_done", event => {
-    const payload = JSON.parse(event.data);
-    finishStreamingMessage(payload.content || state.streamingText);
+  es.addEventListener("task_started", e => {
+    const {task} = JSON.parse(e.data);
+    if (state.data) { state.data.task = task; state.taskStatus = "running"; renderThinking(true); }
   });
-  source.addEventListener("tool_start", event => {
-    const payload = JSON.parse(event.data);
-    setWorkingLabel(`Running ${friendlyToolName(payload.name)}...`);
-  });
-  source.addEventListener("tool_done", () => setWorkingLabel("Working"));
-  source.addEventListener("task_started", event => {
-    const payload = JSON.parse(event.data);
-    if (state.data) {
-      state.data.task = payload.task;
-      state.taskStatus = "running";
-      render(state.data);
-    }
-  });
-  ["task_complete", "task_error", "state"].forEach(name => {
-    source.addEventListener(name, async event => {
-      const payload = JSON.parse(event.data);
+  ["task_complete","task_error","state"].forEach(name => {
+    es.addEventListener(name, async e => {
+      const payload = JSON.parse(e.data);
       if (payload.state) {
         state.data = payload.state;
         render(payload.state);
       } else {
         await refreshState();
       }
-      if (name === "task_complete") toast("Agent turn complete");
+      if (name === "task_complete") {
+        toast("Agent turn complete", "success");
+        // After a turn completes check if outline is now available
+        if (state.wfStep === "outline" && !state.outline) startOutlinePoll();
+      }
       if (name === "task_error") {
-        toast(payload.state?.task?.error || "The agent turn failed.", true);
+        toast(payload.state?.task?.error || "Agent turn failed.", "error");
       }
     });
   });
 }
 
+function setOnline(ok) {
+  const dot = $("#connDot");
+  const label = $("#connLabel");
+  dot.className = "conn-dot " + (ok ? "online" : "error");
+  label.textContent = ok ? "Studio online" : "Disconnected";
+}
+
+/* ─── Global render ──────────────────────────────────────────────────── */
+async function refreshState({silent = true} = {}) {
+  try {
+    const data = await api("/api/state");
+    const prev = state.taskStatus;
+    state.data = data;
+    state.taskStatus = data.task.status;
+    render(data);
+    if (prev === "running" && data.task.status === "complete") toast("Agent turn complete", "success");
+    if (data.task.status === "error" && prev !== "error") toast(data.task.error || "Agent turn failed.", "error");
+  } catch (err) {
+    setOnline(false);
+    if (!silent) toast(err.message, "error");
+  }
+}
+
 function render(data) {
-  renderConnection(true);
-  renderHeader(data);
+  setOnline(true);
   renderProjects(data);
-  renderMessages(data);
-  renderPhase(data);
-  renderPreview(data);
-  renderStats(data);
-  renderExports(data);
-  renderSettings(data);
-  const running = data.task.status === "running";
-  elements.thinkingChip.classList.toggle("hidden", !running);
-  elements.sendButton.disabled = running;
+  renderTopbar(data);
+  renderStep(data);
+  renderThinking(data.task.status === "running");
+
+  // Sync settings modal
+  if ($("#settingsModel")) {
+    $("#settingsModel").textContent = data.model || "—";
+    $("#settingsImages").textContent = data.image_mode || "—";
+    $("#settingsKey").textContent = data.key_configured ? "Configured" : "Missing";
+  }
+
+  // Determine correct step from backend phase
+  const backendStep = phaseToStep(data.workflow?.phase);
+  // Only advance step forward, never regress during active session
+  if (data.active_project || data.active_draft) {
+    const order = ["create","outline","assets","build","export"];
+    const cur = order.indexOf(state.wfStep);
+    const desired = order.indexOf(backendStep);
+    if (desired > cur || state.wfStep === "create") {
+      state.wfStep = backendStep;
+    }
+  }
+  showStep(state.wfStep, data);
 }
 
-function renderConnection(online) {
-  elements.connectionDot.className = `status-dot ${online ? "online" : "error"}`;
-  elements.connectionLabel.textContent = online ? "Studio online" : "Disconnected";
-}
-
-function renderHeader(data) {
-  const projectName = data.active_label ||
-    (data.active_project ? data.active_project.split(/[\\/]/).pop() : "");
-  elements.projectTitle.textContent = projectName || "Create something worth presenting";
-  elements.projectEyebrow.textContent = projectName ? "ACTIVE PROJECT" : "LOCAL WORKSPACE";
-  elements.modelLabel.textContent = data.model;
-  const imageLabels = {disabled: "SVG-native", "prompts-only": "Prompts only", enabled: "AI images"};
-  elements.imageModeLabel.textContent = imageLabels[data.image_mode] || data.image_mode;
-}
-
+/* ─── Project list ───────────────────────────────────────────────────── */
 function renderProjects(data) {
-  const signature = JSON.stringify([
-    data.active_project,
-    data.active_draft,
-    data.projects.map(project => [
-      project.path,
-      project.phase,
-      project.slides,
-      project.modified,
-    ]),
-  ]);
-  if (signature === state.projectSignature) return;
-  state.projectSignature = signature;
-  const draft = data.active_draft ? `
-    <div class="project-item active draft-item">
-      <strong>${escapeHtml(data.active_label || "New presentation")}</strong>
-      <span><i>Draft</i><i>Working</i></span>
-    </div>` : "";
+  const sig = JSON.stringify([data.active_project, data.active_draft, data.projects]);
+  if (sig === state.sigs.projects) return;
+  state.sigs.projects = sig;
+
+  const list = $("#projectList");
+  const draft = data.active_draft
+    ? `<div class="project-item active">
+        <strong>${esc(data.active_label || "New presentation")}</strong>
+        <div class="project-meta-row"><span>Draft</span><span>Working…</span></div>
+       </div>`
+    : "";
+
   if (!data.projects.length && !draft) {
-    elements.projectList.innerHTML = `<div class="project-item"><strong>No projects yet</strong><span><i>Start a new presentation</i></span></div>`;
+    list.innerHTML = `<div class="project-item"><strong>No projects yet</strong><div class="project-meta-row"><span>Create a presentation to start</span></div></div>`;
     return;
   }
-  elements.projectList.innerHTML = draft + data.projects.map(project => {
-    const active = project.path === data.active_project ? "active" : "";
-    return `<button class="project-item ${active}" data-project="${escapeAttr(project.path)}">
-      <strong>${escapeHtml(cleanProjectName(project.name))}</strong>
-      <span><i>${escapeHtml(labelForPhase(project.phase, data))}</i><i>${project.slides} slides</i></span>
+  list.innerHTML = draft + data.projects.map(p => {
+    const act = p.path === data.active_project ? "active" : "";
+    return `<button class="project-item ${act}" data-path="${esc(p.path)}">
+      <strong>${esc(cleanName(p.name))}</strong>
+      <div class="project-meta-row"><span>${esc(p.phase?.replace(/_/g," ") || "")}</span><span>${p.slides} slides</span></div>
     </button>`;
   }).join("");
-  $$(".project-item[data-project]").forEach(button => {
-    button.addEventListener("click", () => openProject(button.dataset.project));
+  $$(".project-item[data-path]").forEach(btn =>
+    btn.addEventListener("click", () => openProject(btn.dataset.path))
+  );
+}
+
+/* ─── Topbar ─────────────────────────────────────────────────────────── */
+function renderTopbar(data) {
+  const name = data.active_label || (data.active_project ? data.active_project.split(/[/\\]/).pop() : "");
+  const hasProject = !!(name);
+
+  const welcome = $("#welcomeScreen");
+  const projectView = $("#projectView");
+  if (hasProject || data.active_draft) {
+    welcome.classList.add("hidden");
+    projectView.classList.remove("hidden");
+    $("#projectTitle").textContent = name || "New presentation";
+    $("#projectEyebrow").textContent = data.active_draft ? "DRAFT" : "ACTIVE PROJECT";
+    if (data.model) $("#modelLabel").textContent = data.model;
+  } else {
+    welcome.classList.remove("hidden");
+    projectView.classList.add("hidden");
+  }
+}
+
+/* ─── Step navigation ────────────────────────────────────────────────── */
+function showStep(step, data) {
+  const steps = ["create","outline","assets","build","export"];
+  const panels = {
+    create: "#panelCreate", outline: "#panelOutline",
+    assets: "#panelAssets", build: "#panelBuild", export: "#panelExport",
+  };
+  steps.forEach(s => {
+    const panel = $(panels[s]);
+    if (panel) panel.classList.toggle("hidden", s !== step);
+    const navItem = $(`.step-item[data-step="${s}"]`);
+    if (navItem) {
+      const idx = steps.indexOf(s);
+      const cur = steps.indexOf(step);
+      navItem.classList.remove("active","complete");
+      if (idx === cur) navItem.classList.add("active");
+      else if (idx < cur) navItem.classList.add("complete");
+    }
+    const conn = $$(`.step-connector`)[steps.indexOf(s)];
+    if (conn) {
+      const idx = steps.indexOf(s);
+      const cur = steps.indexOf(step);
+      conn.classList.toggle("complete", idx < cur);
+      conn.classList.toggle("active", idx === cur);
+    }
+  });
+
+  // Step-specific rendering
+  if (step === "outline") renderOutlinePanel(data);
+  if (step === "build") renderBuildPanel(data);
+  if (step === "export") renderExportPanel(data);
+}
+
+function renderStep(data) {
+  showStep(state.wfStep, data);
+}
+
+/* ─── Thinking chip ──────────────────────────────────────────────────── */
+function renderThinking(running) {
+  const chip = $("#thinkingChip");
+  chip.classList.toggle("hidden", !running);
+  const sendBtn = $("#btnCreate");
+  if (sendBtn) sendBtn.disabled = running;
+  const approveBtn = $("#btnApproveOutline");
+  if (approveBtn) approveBtn.disabled = running || !state.outline;
+}
+function setThinking(label) {
+  const lbl = $("#thinkingLabel");
+  if (lbl) lbl.textContent = label;
+}
+function friendlyTool(name="") {
+  return name.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+/* ─── CREATE step ────────────────────────────────────────────────────── */
+async function loadTemplates() {
+  try {
+    const templates = await api("/api/templates");
+    state.templates = templates;
+    renderTemplateGrid(templates);
+  } catch (_) { /* silently fail */ }
+}
+
+function renderTemplateGrid(templates) {
+  const grid = $("#templateGrid");
+  if (!grid) return;
+  const existing = grid.innerHTML; // keep Free Design card
+
+  const cards = templates.map(t => {
+    const thumb = t.slides[0] ? `<img src="${esc(t.slides[0])}" alt="${esc(t.name)}" loading="lazy">` : "";
+    const sel = state.selectedTemplate === t.id ? "selected" : "";
+    return `<button class="template-item ${sel}" data-template="${esc(t.id)}">
+      <div class="template-preview">${thumb}</div>
+      <div class="template-meta">
+        <span class="template-color-dot" style="background:${esc(t.primary_color)}"></span>
+        <span class="template-name">${esc(t.name)}</span>
+      </div>
+    </button>`;
+  }).join("");
+
+  grid.innerHTML = existing + cards;
+  bindTemplateCards();
+}
+
+function bindTemplateCards() {
+  $$(".template-item").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.template || "";
+      state.selectedTemplate = id;
+      $$(".template-item").forEach(b => b.classList.toggle("selected", b.dataset.template === id));
+    });
   });
 }
 
-function renderMessages(data) {
-  if (state.streamingNode && data.task.status === "running") return;
-  const hasMessages = data.messages.length > 0;
-  elements.welcome.classList.toggle("hidden", hasMessages);
-  elements.stream.classList.toggle("active", hasMessages);
-  const signature = JSON.stringify(data.messages);
-  if (!hasMessages && state.messageSignature) {
-    elements.stream.innerHTML = "";
-    state.messageSignature = "";
-    state.lastMessageCount = 0;
-  } else if (hasMessages && signature !== state.messageSignature) {
-    const shouldScroll = data.messages.length !== state.lastMessageCount;
-    state.messageSignature = signature;
-    elements.stream.innerHTML = data.messages.map(message => `
-      <article class="message ${message.role}">
-        <div class="message-avatar">${message.role === "assistant" ? "P" : "You"}</div>
-        <div class="message-body">
-          <div class="message-meta">${message.role === "assistant" ? "PPT Master" : "You"}</div>
-          <div class="message-content">${renderMarkdown(message.content)}</div>
-        </div>
-      </article>
-    `).join("");
-    if (shouldScroll) {
-      requestAnimationFrame(() => {
-        elements.stream.scrollTop = elements.stream.scrollHeight;
-      });
-    }
-    state.lastMessageCount = data.messages.length;
+async function handleCreate() {
+  const topic = $("#topicInput")?.value.trim();
+  if (!topic) { toast("Describe your presentation first.", "error"); return; }
+
+  const slideCount = parseInt($("#slideCountSelect")?.value || "12");
+  const audience = $("#audienceInput")?.value.trim() || "";
+  const tone = $("#toneSelect")?.value || "Professional";
+  const template = state.selectedTemplate || "";
+
+  const files = state.uploads;
+  const brief = files.length
+    ? `${topic}\n\nSource files: ${files.map(f=>`"${f}"`).join(", ")}`
+    : topic;
+
+  try {
+    state.wfStep = "outline";
+    showStep("outline", state.data || {});
+    const result = await api("/api/projects/new", {
+      method: "POST",
+      body: JSON.stringify({ brief, slide_count: slideCount, audience, tone, template }),
+    });
+    state.data = result.state;
+    state.taskStatus = "running";
+    state.uploads = [];
+    renderUploadTray([]);
+    render(result.state);
+    // Start polling for outline.json
+    startOutlinePoll();
+  } catch (err) {
+    state.wfStep = "create";
+    showStep("create", state.data || {});
+    toast(err.message, "error");
   }
-  const awaiting = data.workflow.phase === "awaiting_confirmations" &&
-    !data.workflow.confirmations_approved &&
-    data.task.status !== "running";
-  elements.confirmCard.classList.toggle("hidden", !awaiting);
 }
 
-function beginStreamingMessage() {
-  if (state.streamingNode) return;
-  elements.welcome.classList.add("hidden");
-  elements.stream.classList.add("active");
-  const article = document.createElement("article");
-  article.className = "message assistant streaming";
-  article.innerHTML = `
-    <div class="message-avatar">P</div>
-    <div class="message-body">
-      <div class="message-meta">PPT Master</div>
-      <div class="message-content"><span class="stream-cursor"></span></div>
-    </div>`;
-  elements.stream.appendChild(article);
-  state.streamingNode = article;
-  state.streamingText = "";
-  elements.stream.scrollTop = elements.stream.scrollHeight;
+/* ─── OUTLINE step ───────────────────────────────────────────────────── */
+function startOutlinePoll() {
+  if (state.outlinePollTimer) clearInterval(state.outlinePollTimer);
+  $("#outlineGenerating")?.classList.remove("hidden");
+  state.outlinePollTimer = setInterval(pollOutline, 3000);
+  pollOutline();
 }
 
-function appendStreamingText(text) {
-  if (!state.streamingNode) beginStreamingMessage();
-  state.streamingText += text;
-  const content = state.streamingNode.querySelector(".message-content");
-  content.textContent = state.streamingText;
-  const cursor = document.createElement("span");
-  cursor.className = "stream-cursor";
-  content.appendChild(cursor);
-  elements.stream.scrollTop = elements.stream.scrollHeight;
+async function pollOutline() {
+  try {
+    const outline = await api("/api/workflow/outline");
+    clearInterval(state.outlinePollTimer);
+    state.outlinePollTimer = null;
+    state.outline = outline;
+    $("#outlineGenerating")?.classList.add("hidden");
+    renderOutlineList(outline);
+    const btn = $("#btnApproveOutline");
+    if (btn) btn.disabled = (state.taskStatus === "running");
+  } catch (_) { /* not ready yet */ }
 }
 
-function finishStreamingMessage(content) {
-  if (!state.streamingNode) return;
-  state.streamingNode.querySelector(".message-content").innerHTML =
-    renderMarkdown(content);
-  state.streamingNode.classList.remove("streaming");
-  state.streamingNode = null;
-  state.streamingText = "";
-}
-
-function setWorkingLabel(label) {
-  const labelNode = elements.thinkingChip.lastChild;
-  if (labelNode) labelNode.textContent = label;
-}
-
-function friendlyToolName(name = "") {
-  return name.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase());
-}
-
-function appendOptimisticUserMessage(content) {
-  elements.welcome.classList.add("hidden");
-  elements.stream.classList.add("active");
-  const article = document.createElement("article");
-  article.className = "message user";
-  article.innerHTML = `
-    <div class="message-avatar">You</div>
-    <div class="message-body">
-      <div class="message-meta">You</div>
-      <div class="message-content">${renderMarkdown(content)}</div>
-    </div>`;
-  elements.stream.appendChild(article);
-  elements.stream.scrollTop = elements.stream.scrollHeight;
-}
-
-function renderPhase(data) {
-  const phases = data.phase_order || Object.keys(data.phase_labels);
-  const current = phases.indexOf(data.workflow.phase);
-  elements.phaseBadge.textContent = data.phase_labels[data.workflow.phase] || data.workflow.phase;
-  const signature = `${data.workflow.phase}|${phases.join("|")}`;
-  if (signature === state.phaseSignature) return;
-  state.phaseSignature = signature;
-  elements.phaseTrack.innerHTML = phases.map((phase, index) => {
-    const cls = index < current ? "complete" : index === current ? "active" : "";
-    return `<div class="phase-step ${cls}">
-      <div class="phase-line"></div>
-      <span>${escapeHtml(data.phase_labels[phase])}</span>
-    </div>`;
-  }).join("");
-}
-
-function renderPreview(data) {
-  const slides = data.slides || [];
-  if (state.activeSlide >= slides.length) state.activeSlide = Math.max(0, slides.length - 1);
-  const previewRunning = data.preview && data.preview.running && data.preview.url;
-  const signature = JSON.stringify([
-    previewRunning ? data.preview.url : "",
-    state.activeSlide,
-    slides.map(slide => [slide.name, slide.modified]),
-  ]);
-  if (signature === state.previewSignature) return;
-  state.previewSignature = signature;
-  if (previewRunning) {
-    elements.previewEmpty.classList.add("hidden");
-    elements.slideCanvas.classList.add("hidden");
-    elements.previewFrame.classList.remove("hidden");
-    if (elements.previewFrame.src !== data.preview.url) elements.previewFrame.src = data.preview.url;
-  } else if (slides.length) {
-    elements.previewEmpty.classList.add("hidden");
-    elements.previewFrame.classList.add("hidden");
-    elements.slideCanvas.classList.remove("hidden");
-    const slide = slides[state.activeSlide];
-    elements.activeSlideImage.src = `${slide.url}?v=${slide.modified}`;
+function renderOutlinePanel(data) {
+  if (state.outline) {
+    renderOutlineList(state.outline);
+    const btn = $("#btnApproveOutline");
+    if (btn) btn.disabled = data?.task?.status === "running";
   } else {
-    elements.previewEmpty.classList.remove("hidden");
-    elements.previewFrame.classList.add("hidden");
-    elements.slideCanvas.classList.add("hidden");
+    if (data?.task?.status !== "running") {
+      // Might be opening an existing project — try to load outline
+      api("/api/workflow/outline").then(o => {
+        state.outline = o;
+        renderOutlineList(o);
+        const btn = $("#btnApproveOutline");
+        if (btn) btn.disabled = false;
+      }).catch(() => {});
+    }
   }
-  elements.slideToolbar.classList.toggle("hidden", slides.length === 0);
-  elements.slideCounter.textContent = slides.length ? `${state.activeSlide + 1} / ${slides.length}` : "0 / 0";
-  elements.filmstrip.innerHTML = slides.map((slide, index) => `
-    <button class="thumb ${index === state.activeSlide ? "active" : ""}" data-slide="${index}">
-      <img src="${slide.url}?v=${slide.modified}" alt="${escapeAttr(slide.name)}">
-    </button>
-  `).join("");
-  $$(".thumb").forEach(button => button.addEventListener("click", () => {
-    state.activeSlide = Number(button.dataset.slide);
-    renderPreview(state.data);
+}
+
+function renderOutlineList(outline) {
+  const container = $("#outlineList");
+  if (!container) return;
+  const slides = outline?.slides || [];
+  if (!slides.length) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-3)">Waiting for outline…</div>`;
+    return;
+  }
+  container.innerHTML = slides.map((slide, i) => renderSlideCard(slide, i)).join("");
+  bindOutlineEvents();
+}
+
+function renderSlideCard(slide, i) {
+  const points = (slide.key_points || []).map((pt, pi) =>
+    `<div class="slide-point">
+      <input class="slide-point-input" data-slide="${i}" data-point="${pi}" value="${esc(pt)}" placeholder="Key point…">
+    </div>`
+  ).join("");
+  const layoutCls = slide.layout || "content";
+  return `<div class="slide-card" data-index="${i}">
+    <div class="slide-card-index">${slide.index || i+1}</div>
+    <div class="slide-card-body">
+      <div class="slide-card-title-row">
+        <input class="slide-card-title-input" data-slide="${i}" data-field="title" value="${esc(slide.title || "")}" placeholder="Slide title…">
+        <span class="layout-badge ${layoutCls}">${esc(slide.layout || "content")}</span>
+      </div>
+      <textarea class="slide-card-purpose" data-slide="${i}" data-field="purpose" rows="2" placeholder="What does this slide achieve?">${esc(slide.purpose || "")}</textarea>
+      <div class="slide-card-points">
+        ${points}
+        <button class="add-point-btn" data-slide="${i}">+ Add point</button>
+      </div>
+    </div>
+    <div class="slide-card-actions">
+      <button class="slide-card-btn" data-action="move-up" data-index="${i}" title="Move up">↑</button>
+      <button class="slide-card-btn" data-action="move-down" data-index="${i}" title="Move down">↓</button>
+      <button class="slide-card-btn danger" data-action="delete" data-index="${i}" title="Delete">✕</button>
+    </div>
+  </div>`;
+}
+
+function bindOutlineEvents() {
+  // Edit fields → update state.outline
+  $$(".slide-card-title-input").forEach(inp => inp.addEventListener("input", () => {
+    const i = +inp.dataset.slide;
+    state.outline.slides[i].title = inp.value;
+  }));
+  $$(".slide-card-purpose").forEach(ta => ta.addEventListener("input", () => {
+    const i = +ta.dataset.slide;
+    state.outline.slides[i].purpose = ta.value;
+  }));
+  $$(".slide-point-input").forEach(inp => inp.addEventListener("input", () => {
+    const i = +inp.dataset.slide; const pi = +inp.dataset.point;
+    state.outline.slides[i].key_points[pi] = inp.value;
+  }));
+  $$(".add-point-btn").forEach(btn => btn.addEventListener("click", () => {
+    const i = +btn.dataset.slide;
+    state.outline.slides[i].key_points = state.outline.slides[i].key_points || [];
+    state.outline.slides[i].key_points.push("");
+    renderOutlineList(state.outline);
+  }));
+  $$(".slide-card-btn[data-action]").forEach(btn => btn.addEventListener("click", () => {
+    const {action, index} = btn.dataset;
+    const i = +index;
+    const slides = state.outline.slides;
+    if (action === "delete" && slides.length > 1) {
+      slides.splice(i, 1);
+      slides.forEach((s,j) => s.index = j+1);
+      renderOutlineList(state.outline);
+    } else if (action === "move-up" && i > 0) {
+      [slides[i], slides[i-1]] = [slides[i-1], slides[i]];
+      slides.forEach((s,j) => s.index = j+1);
+      renderOutlineList(state.outline);
+    } else if (action === "move-down" && i < slides.length-1) {
+      [slides[i], slides[i+1]] = [slides[i+1], slides[i]];
+      slides.forEach((s,j) => s.index = j+1);
+      renderOutlineList(state.outline);
+    }
   }));
 }
 
-function renderStats(data) {
-  elements.slideCount.textContent = data.slides.length;
-  elements.tokenCount.textContent = compactNumber(data.usage.total_tokens || 0);
-  elements.imageModeStat.textContent = data.image_mode === "disabled" ? "Off" :
-    data.image_mode === "prompts-only" ? "Prompt" : "On";
-}
-
-function renderExports(data) {
-  const signature = JSON.stringify(data.exports);
-  if (signature === state.exportSignature) return;
-  state.exportSignature = signature;
-  elements.exportList.innerHTML = data.exports.slice(0, 3).map(file => `
-    <a class="export-card" href="${file.url}">
-      <span class="export-icon">${file.name.toLowerCase().endsWith(".pptx") ? "P" : "↓"}</span>
-      <span><strong>${escapeHtml(file.name)}</strong><span>${formatBytes(file.size)}</span></span>
-      <span class="download">Download</span>
-    </a>
-  `).join("");
-}
-
-function renderSettings(data) {
-  $("#settingsModel").textContent = data.model;
-  $("#settingsImages").textContent = data.image_mode;
-  $("#settingsKey").textContent = data.key_configured ? "Configured" : "Missing";
-}
-
-async function sendMessage(text = elements.messageInput.value.trim()) {
-  if (!text || state.data?.task.status === "running") return;
-  const files = state.uploads.map(file => `"${file}"`).join(", ");
-  const message = files ? `${text}\n\nLocal source files: ${files}` : text;
-  elements.messageInput.value = "";
-  autoSizeInput();
-  state.uploads = [];
-  renderUploadTray();
-  appendOptimisticUserMessage(message);
+async function approveOutline() {
+  if (state.taskStatus === "running") return;
+  // Save any edits to outline.json
   try {
-    await api("/api/chat", {method: "POST", body: JSON.stringify({message})});
-    if (state.data) {
-      state.data.task.status = "running";
-      render(state.data);
+    if (state.outline) {
+      await api("/api/workflow/outline", {method:"PATCH", body: JSON.stringify(state.outline)});
     }
-  } catch (error) {
-    toast(error.message, true);
+    await api("/api/confirm", {method:"POST", body:"{}"});
+    state.taskStatus = "running";
+    // Transition to assets or build based on image mode
+    const imageMode = state.data?.image_mode;
+    state.wfStep = (imageMode === "enabled") ? "assets" : "build";
+    showStep(state.wfStep, state.data);
+    renderThinking(true);
+  } catch (err) {
+    toast(err.message, "error");
   }
 }
 
+/* ─── ASSETS step ────────────────────────────────────────────────────── */
+async function skipAssets() {
+  try {
+    await api("/api/confirm", {method:"POST", body:"{}"});
+    state.wfStep = "build";
+    showStep("build", state.data);
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+/* ─── BUILD step ─────────────────────────────────────────────────────── */
+function renderBuildPanel(data) {
+  const slides = data?.slides || [];
+  const expected = data?.workflow?.expected_slide_count || 0;
+
+  // Progress
+  const bar = $("#buildProgressBar");
+  if (data?.task?.status === "running" && slides.length < (expected || 99)) {
+    bar?.classList.remove("hidden");
+    const pct = expected ? Math.round(slides.length / expected * 100) : 0;
+    const fill = $("#buildProgressFill");
+    if (fill) fill.style.setProperty("--w", pct + "%"), fill.style.cssText = `--w:${pct}%;`, fill.style.width = pct + "%";
+    const lbl = $("#buildProgressLabel");
+    if (lbl) lbl.textContent = expected ? `Building slide ${slides.length + 1} of ${expected}…` : "Building…";
+  } else {
+    bar?.classList.add("hidden");
+  }
+
+  // Slides
+  const sig = JSON.stringify([state.activeSlide, slides.map(s => [s.name, s.modified]), data?.preview]);
+  if (sig === state.sigs.slides) return;
+  state.sigs.slides = sig;
+
+  if (state.activeSlide >= slides.length) state.activeSlide = Math.max(0, slides.length - 1);
+
+  const preview = data?.preview;
+  const previewRunning = preview?.running && preview?.url;
+  const frame = $("#previewFrame");
+  const img = $("#activeSlideImg");
+  const empty = $("#canvasEmpty");
+
+  if (previewRunning) {
+    empty?.classList.add("hidden");
+    img?.classList.add("hidden");
+    frame?.classList.remove("hidden");
+    if (frame && frame.src !== preview.url) frame.src = preview.url;
+  } else if (slides.length) {
+    empty?.classList.add("hidden");
+    frame?.classList.add("hidden");
+    img?.classList.remove("hidden");
+    const slide = slides[state.activeSlide];
+    if (img) img.src = `${slide.url}?v=${slide.modified}`;
+  } else {
+    empty?.classList.remove("hidden");
+    frame?.classList.add("hidden");
+    img?.classList.add("hidden");
+  }
+
+  const counter = $("#slideCounter");
+  if (counter) counter.textContent = slides.length ? `${state.activeSlide + 1} / ${slides.length}` : "0 / 0";
+
+  // Filmstrip
+  const strip = $("#filmstrip");
+  if (strip) {
+    strip.innerHTML = slides.map((slide, i) =>
+      `<button class="thumb-btn ${i === state.activeSlide ? "active" : ""}" data-slide="${i}">
+        <img src="${slide.url}?v=${slide.modified}" alt="${esc(slide.name)}" loading="lazy">
+      </button>`
+    ).join("");
+    $$(".thumb-btn").forEach(btn => btn.addEventListener("click", () => {
+      state.activeSlide = +btn.dataset.slide;
+      renderBuildPanel(state.data);
+    }));
+  }
+}
+
+/* ─── EXPORT step ────────────────────────────────────────────────────── */
+function renderExportPanel(data) {
+  const exports = data?.exports || [];
+  const sig = JSON.stringify(exports);
+  if (sig === state.sigs.exports) return;
+  state.sigs.exports = sig;
+
+  const list = $("#exportsList");
+  if (!list) return;
+  if (!exports.length) {
+    list.innerHTML = `<div style="text-align:center;padding:40px;color:var(--text-3)">No exports yet — run post-processing to generate the PPTX.</div>`;
+    return;
+  }
+  list.innerHTML = exports.map(f => {
+    const isPptx = f.name.toLowerCase().endsWith(".pptx");
+    return `<a class="export-card" href="${esc(f.url)}" download>
+      <div class="export-icon">${isPptx ? "🗂" : "↓"}</div>
+      <div class="export-card-info">
+        <strong>${esc(f.name)}</strong>
+        <span>${fmt(f.size)}</span>
+      </div>
+      <div class="export-download">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 4v8M6 8l4 4 4-4M4 14h12v2H4z"/>
+        </svg>
+        Download
+      </div>
+    </a>`;
+  }).join("");
+}
+
+/* ─── AI Edit sidebar ────────────────────────────────────────────────── */
+function beginAiStream() {
+  // When in build/edit mode, stream to the AI sidebar
+  if (!["build","export"].includes(state.wfStep)) return;
+  const msgs = $("#aiMessages");
+  if (!msgs) return;
+  const el = document.createElement("div");
+  el.className = "ai-msg assistant";
+  el.textContent = "";
+  msgs.appendChild(el);
+  state.streamingNode = el;
+  state.streamingText = "";
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendAiStream(text) {
+  if (!state.streamingNode) beginAiStream();
+  state.streamingText += text;
+  if (state.streamingNode) {
+    state.streamingNode.textContent = state.streamingText;
+    const msgs = $("#aiMessages");
+    if (msgs) msgs.scrollTop = msgs.scrollHeight;
+  }
+}
+
+function finishAiStream(content) {
+  if (state.streamingNode) {
+    state.streamingNode.textContent = content;
+    state.streamingNode = null;
+    state.streamingText = "";
+  }
+}
+
+async function sendAiEdit() {
+  const input = $("#aiInput");
+  const text = input?.value.trim();
+  if (!text || state.taskStatus === "running") return;
+  if (input) input.value = "";
+
+  const msgs = $("#aiMessages");
+  if (msgs) {
+    const el = document.createElement("div");
+    el.className = "ai-msg user";
+    el.textContent = text;
+    msgs.appendChild(el);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  const scopePrefix = state.aiScope === "slide"
+    ? `Edit the current slide (slide ${state.activeSlide + 1}): `
+    : "Edit the full deck: ";
+
+  try {
+    await api("/api/chat", {method:"POST", body: JSON.stringify({message: scopePrefix + text})});
+    state.taskStatus = "running";
+    renderThinking(true);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ─── File uploads ───────────────────────────────────────────────────── */
 async function uploadFiles(fileList) {
   const files = [...fileList];
   if (!files.length) return;
-  const body = new FormData();
-  files.forEach(file => body.append("files", file));
+  const form = new FormData();
+  files.forEach(f => form.append("files", f));
   try {
-    toast(`Uploading ${files.length} source${files.length > 1 ? "s" : ""}…`);
-    const result = await api("/api/upload", {method: "POST", body});
+    toast(`Uploading ${files.length} file${files.length>1?"s":""}…`);
+    const result = await api("/api/upload", {method:"POST", body: form});
     state.uploads.push(...result.files);
-    renderUploadTray();
-    toast("Sources ready");
-  } catch (error) {
-    toast(error.message, true);
-  }
+    renderUploadTray(state.uploads);
+    toast("Files ready");
+  } catch (err) { toast(err.message, "error"); }
 }
 
-function renderUploadTray() {
-  elements.uploadTray.classList.toggle("hidden", state.uploads.length === 0);
-  elements.uploadTray.innerHTML = state.uploads.map(path => `
-    <div class="upload-pill"><b>↥</b><span>${escapeHtml(path.split(/[\\/]/).pop())}</span></div>
-  `).join("");
+function renderUploadTray(paths) {
+  const tray = $("#createUploadTray");
+  if (!tray) return;
+  tray.innerHTML = paths.map((p, i) =>
+    `<div class="upload-pill">
+      <span>${esc(p.split(/[/\\]/).pop())}</span>
+      <button class="upload-pill-remove" data-idx="${i}">✕</button>
+    </div>`
+  ).join("");
+  $$(".upload-pill-remove").forEach(btn => btn.addEventListener("click", () => {
+    state.uploads.splice(+btn.dataset.idx, 1);
+    renderUploadTray(state.uploads);
+  }));
 }
 
+/* ─── Project management ─────────────────────────────────────────────── */
 async function openProject(path) {
   try {
-    const data = await api("/api/projects/open", {method: "POST", body: JSON.stringify({path})});
-    state.activeSlide = 0;
-    elements.rail.classList.remove("open");
+    const data = await api("/api/projects/open", {method:"POST", body: JSON.stringify({path})});
+    state.activeSlide = 0; state.outline = null; state.uploads = [];
+    state.sigs = {projects:"",slides:"",exports:""};
     state.data = data;
-    resetRenderSignatures();
+    const step = phaseToStep(data.workflow?.phase);
+    state.wfStep = step;
+    closeSidebar();
     render(data);
     toast("Project opened");
-  } catch (error) {
-    toast(error.message, true);
-  }
+    // Try to load outline if we're in outline step
+    if (step === "outline") startOutlinePoll();
+  } catch (err) { toast(err.message, "error"); }
 }
 
-async function createProject() {
-  const brief = $("#newProjectBrief").value.trim();
-  if (!brief) return toast("Add a presentation brief first.", true);
-  try {
-    closeModal($("#newProjectModal"));
-    const result = await api("/api/projects/new", {method: "POST", body: JSON.stringify({brief})});
-    state.activeSlide = 0;
-    state.streamingNode = null;
-    state.streamingText = "";
-    resetRenderSignatures();
-    state.data = result.state;
-    render(result.state);
-    appendOptimisticUserMessage(brief);
-  } catch (error) {
-    toast(error.message, true);
+function startNewPresentation(prefill = "") {
+  state.outline = null;
+  state.uploads = [];
+  state.selectedTemplate = "";
+  state.wfStep = "create";
+  // If no active project yet, show the create panel inside project view
+  // We'll create a blank state to show the project view
+  if (!state.data?.active_project && !state.data?.active_draft) {
+    // Just navigate to create form in the project view
+    const welcome = $("#welcomeScreen");
+    const pv = $("#projectView");
+    welcome?.classList.add("hidden");
+    pv?.classList.remove("hidden");
+    if (pv) {
+      $("#projectTitle").textContent = "New presentation";
+      $("#projectEyebrow").textContent = "GETTING STARTED";
+    }
   }
-}
-
-function resetRenderSignatures() {
-  state.messageSignature = "";
-  state.projectSignature = "";
-  state.phaseSignature = "";
-  state.previewSignature = "";
-  state.exportSignature = "";
-  state.lastMessageCount = 0;
-  elements.stream.innerHTML = "";
-}
-
-async function startPreview() {
-  if (!state.data?.active_project) return toast("Open a project before starting preview.", true);
-  try {
-    const result = await api("/api/preview/start", {method: "POST", body: "{}"});
-    await refreshState({silent: false});
-    toast(`Preview ready at ${result.url}`);
-  } catch (error) {
-    toast(error.message, true);
-  }
+  showStep("create", state.data || {});
+  renderUploadTray([]);
+  // Reset form
+  const ta = $("#topicInput");
+  if (ta) ta.value = prefill;
+  $$(".template-item").forEach(b => b.classList.toggle("selected", b.dataset.template === ""));
+  state.selectedTemplate = "";
+  closeSidebar();
+  if (prefill && ta) ta.focus();
 }
 
 async function triggerExport() {
-  if (!state.data?.active_project) return toast("Open a project before exporting.", true);
-  await sendMessage("Complete all currently eligible quality and post-processing steps, then export the active project to PPTX. Respect every workflow gate.");
-}
-
-function autoSizeInput() {
-  elements.messageInput.style.height = "auto";
-  elements.messageInput.style.height = `${Math.min(elements.messageInput.scrollHeight, 140)}px`;
-}
-
-function openModal(element) { element.classList.remove("hidden"); }
-function closeModal(element) { element.classList.add("hidden"); }
-
-function renderMarkdown(source) {
-  let text = escapeHtml(String(source || ""));
-  const codeBlocks = [];
-  text = text.replace(/```([\s\S]*?)```/g, (_, code) => {
-    codeBlocks.push(`<pre><code>${code.trim()}</code></pre>`);
-    return `@@CODE${codeBlocks.length - 1}@@`;
-  });
-  text = text
-    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/^\s*[-*] (.+)$/gm, "<li>$1</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, match => `<ul>${match}</ul>`)
-    .split(/\n{2,}/)
-    .map(block => /^<(h\d|ul|pre)/.test(block) || /^@@CODE/.test(block) ? block : `<p>${block.replace(/\n/g, "<br>")}</p>`)
-    .join("");
-  return text.replace(/@@CODE(\d+)@@/g, (_, index) => codeBlocks[Number(index)]);
-}
-
-function toast(message, error = false) {
-  const item = document.createElement("div");
-  item.className = `toast ${error ? "error" : ""}`;
-  item.textContent = message;
-  $("#toastRegion").appendChild(item);
-  setTimeout(() => item.remove(), 3900);
-}
-
-function cleanProjectName(name) {
-  return name.replace(/_(ppt169|ppt43|xhs|story|a4)_\d{8}$/i, "").replace(/_/g, " ");
-}
-function labelForPhase(phase, data) { return data.phase_labels[phase] || phase; }
-function compactNumber(value) { return new Intl.NumberFormat("en", {notation: "compact", maximumFractionDigits: 1}).format(value); }
-function formatBytes(bytes) { return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`; }
-function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char])); }
-function escapeAttr(value) { return escapeHtml(value).replace(/`/g, "&#096;"); }
-
-elements.sendButton.addEventListener("click", () => sendMessage());
-elements.messageInput.addEventListener("input", autoSizeInput);
-elements.messageInput.addEventListener("keydown", event => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    sendMessage();
-  }
-});
-$("#fileInput").addEventListener("change", event => uploadFiles(event.target.files));
-$("#composer").addEventListener("dragover", event => { event.preventDefault(); event.currentTarget.classList.add("dragging"); });
-$("#composer").addEventListener("dragleave", event => event.currentTarget.classList.remove("dragging"));
-$("#composer").addEventListener("drop", event => {
-  event.preventDefault();
-  event.currentTarget.classList.remove("dragging");
-  uploadFiles(event.dataTransfer.files);
-});
-$("#confirmButton").addEventListener("click", async () => {
+  if (!state.data?.active_project) { toast("Open a project first.", "error"); return; }
   try {
-    await api("/api/confirm", {method: "POST", body: "{}"});
-    if (state.data) {
-      state.data.task.status = "running";
-      render(state.data);
-    }
-  } catch (error) { toast(error.message, true); }
-});
-$("#newProjectButton").addEventListener("click", () => openModal($("#newProjectModal")));
-$("#createProjectButton").addEventListener("click", createProject);
-$("#settingsButton").addEventListener("click", () => openModal($("#settingsModal")));
-$("#refreshProjects").addEventListener("click", () => refreshState({silent: false}));
-$("#previewButton").addEventListener("click", startPreview);
-$("#editorButton").addEventListener("click", startPreview);
-$("#exportButton").addEventListener("click", triggerExport);
-$("#previousSlide").addEventListener("click", () => { if (state.activeSlide > 0) { state.activeSlide--; renderPreview(state.data); } });
-$("#nextSlide").addEventListener("click", () => { if (state.activeSlide < (state.data?.slides.length || 1) - 1) { state.activeSlide++; renderPreview(state.data); } });
-$("#mobileMenu").addEventListener("click", () => elements.rail.classList.toggle("open"));
-$$("[data-close-modal]").forEach(button => button.addEventListener("click", () => closeModal($("#newProjectModal"))));
-$$("[data-close-settings]").forEach(button => button.addEventListener("click", () => closeModal($("#settingsModal"))));
-$$(".starter-card").forEach(button => button.addEventListener("click", () => {
-  elements.messageInput.value = button.dataset.prompt;
-  autoSizeInput();
-  elements.messageInput.focus();
+    await api("/api/chat", {method:"POST", body: JSON.stringify({
+      message: "Complete quality checking and post-processing, then export the active project to PPTX. Respect all workflow gates.",
+    })});
+    state.taskStatus = "running";
+    renderThinking(true);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+async function startPreview() {
+  if (!state.data?.active_project) { toast("Open a project first.", "error"); return; }
+  try {
+    const result = await api("/api/preview/start", {method:"POST", body:"{}"});
+    await refreshState({silent:false});
+    toast(`Preview ready at ${result.url}`);
+  } catch (err) { toast(err.message, "error"); }
+}
+
+/* ─── Sidebar toggle ─────────────────────────────────────────────────── */
+function openMobileSidebar() {
+  $("#sidebar")?.classList.add("open");
+  $("#sidebarOverlay")?.classList.remove("hidden");
+}
+function closeSidebar() {
+  $("#sidebar")?.classList.remove("open");
+  $("#sidebarOverlay")?.classList.add("hidden");
+}
+
+/* ─── Utility ────────────────────────────────────────────────────────── */
+function cleanName(name) {
+  return name.replace(/_(ppt169|ppt43|xhs|story|a4)_\d{8}$/i,"").replace(/_/g," ");
+}
+
+function toast(msg, type = "") {
+  const region = $("#toastRegion");
+  if (!region) return;
+  const el = document.createElement("div");
+  el.className = "toast " + (type || "");
+  el.textContent = msg;
+  region.appendChild(el);
+  setTimeout(() => el.remove(), 3900);
+}
+
+/* ─── Event bindings ─────────────────────────────────────────────────── */
+
+// New project
+$("#btnNewProject")?.addEventListener("click", () => startNewPresentation());
+$("#btnWelcomeNew")?.addEventListener("click", () => startNewPresentation());
+
+// Example cards
+$$(".example-card").forEach(btn => btn.addEventListener("click", () => {
+  startNewPresentation(btn.dataset.prompt || "");
 }));
-document.addEventListener("keydown", event => {
-  if (event.key === "Escape") {
-    $$(".modal-backdrop").forEach(closeModal);
-    elements.rail.classList.remove("open");
+
+// Create form
+$("#btnCreate")?.addEventListener("click", handleCreate);
+
+// File upload
+const fileInput = $("#createFileInput");
+fileInput?.addEventListener("change", e => uploadFiles(e.target.files));
+
+const dropZone = $("#createDropZone");
+dropZone?.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("dragging"); });
+dropZone?.addEventListener("dragleave", () => dropZone.classList.remove("dragging"));
+dropZone?.addEventListener("drop", e => {
+  e.preventDefault(); dropZone.classList.remove("dragging");
+  uploadFiles(e.dataTransfer.files);
+});
+
+// Template cards (initial — Free Design)
+$("#templateFreeDesign")?.addEventListener("click", () => {
+  state.selectedTemplate = "";
+  $$(".template-item").forEach(b => b.classList.toggle("selected", b.dataset.template === ""));
+});
+
+// Image toggle
+$("#imageToggle")?.addEventListener("click", () => {
+  state.imageOn = !state.imageOn;
+  const btn = $("#imageToggle");
+  btn.dataset.on = String(state.imageOn);
+  btn.setAttribute("aria-pressed", String(state.imageOn));
+  $("#imageToggleLabel").textContent = state.imageOn ? "On" : "Off";
+});
+
+// Outline: approve
+$("#btnApproveOutline")?.addEventListener("click", approveOutline);
+
+// Outline: add slide
+$("#btnAddSlide")?.addEventListener("click", () => {
+  if (!state.outline) return;
+  const slides = state.outline.slides;
+  slides.push({
+    index: slides.length + 1,
+    title: "New slide",
+    purpose: "",
+    key_points: [],
+    layout: "content",
+  });
+  renderOutlineList(state.outline);
+});
+
+// Assets
+$("#btnSkipAssets")?.addEventListener("click", skipAssets);
+$("#btnProceedAssets")?.addEventListener("click", async () => {
+  state.wfStep = "build";
+  showStep("build", state.data);
+});
+
+// Build: slide nav
+$("#btnPrevSlide")?.addEventListener("click", () => {
+  if (state.activeSlide > 0) { state.activeSlide--; renderBuildPanel(state.data); }
+});
+$("#btnNextSlide")?.addEventListener("click", () => {
+  const max = (state.data?.slides?.length || 1) - 1;
+  if (state.activeSlide < max) { state.activeSlide++; renderBuildPanel(state.data); }
+});
+
+// Build: editor / export
+$$("[id^='btnOpenEditor'], #btnOpenEditorExport").forEach(btn => btn?.addEventListener("click", startPreview));
+$$("[id^='btnExport']").forEach(btn => btn?.addEventListener("click", triggerExport));
+
+// AI sidebar
+$("#btnCloseSidebar")?.addEventListener("click", () => {
+  $("#aiSidebar")?.classList.add("hidden");
+  $("#btnOpenSidebar")?.classList.remove("hidden");
+});
+$("#btnOpenSidebar")?.addEventListener("click", () => {
+  $("#aiSidebar")?.classList.remove("hidden");
+  $("#btnOpenSidebar")?.classList.add("hidden");
+});
+
+$$(".scope-btn").forEach(btn => btn.addEventListener("click", () => {
+  state.aiScope = btn.dataset.scope;
+  $$(".scope-btn").forEach(b => b.classList.toggle("active", b.dataset.scope === state.aiScope));
+}));
+
+$("#btnAiSend")?.addEventListener("click", sendAiEdit);
+$("#aiInput")?.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendAiEdit(); }
+});
+
+// Refresh projects
+$("#btnRefresh")?.addEventListener("click", () => refreshState({silent:false}));
+
+// Settings
+$("#btnSettings")?.addEventListener("click", () => $("#settingsModal")?.classList.remove("hidden"));
+$("#btnCloseSettings")?.addEventListener("click", () => $("#settingsModal")?.classList.add("hidden"));
+
+// Mobile nav
+$("#btnHamburger")?.addEventListener("click", openMobileSidebar);
+$("#btnHamburger2")?.addEventListener("click", openMobileSidebar);
+$("#sidebarOverlay")?.addEventListener("click", closeSidebar);
+
+// Keyboard
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    closeSidebar();
+    $("#settingsModal")?.classList.add("hidden");
+  }
+  if (state.wfStep === "build" && !e.target.matches("input,textarea,select")) {
+    const slides = state.data?.slides || [];
+    if (e.key === "ArrowLeft" && state.activeSlide > 0) {
+      state.activeSlide--; renderBuildPanel(state.data);
+    }
+    if (e.key === "ArrowRight" && state.activeSlide < slides.length - 1) {
+      state.activeSlide++; renderBuildPanel(state.data);
+    }
   }
 });
 
-refreshState({silent: false});
+/* ─── Boot ───────────────────────────────────────────────────────────── */
+refreshState({silent: false}).then(() => {
+  // Load templates in background
+  loadTemplates();
+  // If in outline step but no outline yet, try to load
+  if (state.wfStep === "outline" && !state.outline) startOutlinePoll();
+});
 connectEvents();
+
+// Keep-alive poll
 setInterval(() => {
   if (!state.eventSource || state.eventSource.readyState === EventSource.CLOSED) {
     refreshState();
