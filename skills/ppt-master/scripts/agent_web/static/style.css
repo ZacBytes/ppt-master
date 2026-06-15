@@ -65,14 +65,22 @@ img { display: block; }
   z-index: 30; gap: 0;
 }
 .rail-logo {
-  width: 32px; height: 32px; border-radius: 8px;
-  background: var(--primary-lt); color: var(--primary);
-  display: grid; place-items: center; margin-bottom: 16px; flex-shrink: 0;
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: var(--primary); color: #fff;
+  display: grid; place-items: center;
+  border: none; cursor: pointer;
+  transition: background .15s, transform .15s;
+  margin-bottom: 8px;
 }
+.rail-logo:hover { background: var(--primary-dk); transform: scale(1.05); }
 .rail-logo svg { width: 20px; }
-.rail-nav { display: flex; flex-direction: column; gap: 4px; width: 100%; align-items: center; }
+
+.rail-nav {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  align-items: center; gap: 2px; width: 100%;
+}
 .rail-btn {
-  width: 40px; height: 40px; border: none; background: none;
+  width: 44px; height: 44px; border: none; background: none;
   border-radius: var(--radius-sm); color: var(--text-3);
   display: grid; place-items: center;
   transition: color .15s, background .15s;
@@ -80,7 +88,22 @@ img { display: block; }
 .rail-btn:hover { color: var(--primary); background: var(--primary-lt); }
 .rail-btn.active { color: var(--primary); background: var(--primary-lt); }
 .rail-btn svg { width: 18px; }
-.rail-footer { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+/* Nav buttons with icon + label */
+.rail-nav-btn {
+  width: 48px; height: 52px; border-radius: var(--radius-sm);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; color: var(--text-3); font-size: 9px; font-weight: 600;
+  letter-spacing: .02em; text-transform: uppercase;
+  border: none; background: none; cursor: pointer;
+  transition: color .15s, background .15s;
+}
+.rail-nav-btn svg { width: 18px; }
+.rail-nav-btn span { line-height: 1; }
+.rail-nav-btn:hover { color: var(--primary); background: var(--primary-lt); }
+.rail-nav-btn.active { color: var(--primary); background: var(--primary-lt); }
+
+.rail-footer { display: flex; flex-direction: column; align-items: center; gap: 10px; padding-bottom: 4px; }
 .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; transition: background .3s; }
 .conn-dot.online { background: var(--success); box-shadow: 0 0 0 3px rgba(16,185,129,.15); }
 .conn-dot.error { background: var(--danger); }

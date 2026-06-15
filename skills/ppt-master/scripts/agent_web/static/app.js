@@ -888,6 +888,23 @@ function toast(msg, type = "") {
 $("#btnNewProject")?.addEventListener("click", () => startNewPresentation());
 $("#btnWelcomeNew")?.addEventListener("click", () => startNewPresentation());
 
+// Nav rail
+$("#btnGoHome")?.addEventListener("click", () => {
+  // Show welcome screen / deselect project
+  const welcome = $("#welcomeScreen");
+  const projectView = $("#projectView");
+  welcome?.classList.remove("hidden");
+  projectView?.classList.add("hidden");
+  $$(".rail-nav-btn").forEach(b => b.classList.remove("active"));
+  $("#btnGoHome")?.classList.add("active");
+});
+$("#btnGoTemplates")?.addEventListener("click", () => {
+  // Jump to Create step with template gallery visible
+  startNewPresentation();
+  $$(".rail-nav-btn").forEach(b => b.classList.remove("active"));
+  $("#btnGoTemplates")?.classList.add("active");
+});
+
 // Example cards
 $$(".example-card").forEach(btn => btn.addEventListener("click", () => {
   startNewPresentation(btn.dataset.prompt || "");
