@@ -498,29 +498,18 @@ function renderBuildPanel(data) {
   const img = $("#activeSlideImg");
   const empty = $("#canvasEmpty");
 
-  if (previewRunning) {
-    empty?.classList.add("hidden");
-    img?.classList.add("hidden");
-    frame?.classList.remove("hidden");
-    if (frame && frame.src !== preview.url) frame.src = preview.url;
-  } else if (slides.length) {
-    // Auto-start the editor so the canvas is always interactive
-    if (!state._previewStarting) {
-      state._previewStarting = true;
-      api("/api/preview/start", {method:"POST", body:"{}"})
-        .then(() => refreshState({silent:true}))
-        .catch(() => { state._previewStarting = false; });
-    }
-    // Show static image while editor is starting up
+  if (slides.length) {
     empty?.classList.add("hidden");
     frame?.classList.add("hidden");
-    img?.classList.remove("hidden");
+    img?.classList.add("hidden");
     const slide = slides[state.activeSlide];
-    if (img) img.src = `${slide.url}?v=${slide.modified}`;
+    renderInlineSvg(slide.url, slide.modified);
   } else {
     empty?.classList.remove("hidden");
     frame?.classList.add("hidden");
     img?.classList.add("hidden");
+    const inlineSvg = $("#inlineSvgCanvas");
+    if (inlineSvg) inlineSvg.innerHTML = "";
   }
 
   const counter = $("#slideCounter");
@@ -718,13 +707,49 @@ async function triggerExport() {
   } catch (err) { toast(err.message, "error"); }
 }
 
-async function startPreview() {
-  if (!state.data?.active_project) { toast("Open a project first.", "error"); return; }
+/* ─── Inline SVG canvas ──────────────────────────────────────────────── */
+let _svgLoadKey = "";
+
+async function renderInlineSvg(url, modified) {
+  const key = `${url}?v=${modified}`;
+  if (key === _svgLoadKey) return;
+  _svgLoadKey = key;
+
+  const container = $("#inlineSvgCanvas");
+  if (!container) return;
   try {
-    const result = await api("/api/preview/start", {method:"POST", body:"{}"});
-    await refreshState({silent:false});
-    toast(`Preview ready at ${result.url}`);
-  } catch (err) { toast(err.message, "error"); }
+    const res = await fetch(`${url}?v=${modified}`);
+    const text = await res.text();
+    container.innerHTML = text;
+    const svgEl = container.querySelector("svg");
+    if (!svgEl) return;
+    // Make it fill the container while keeping aspect ratio
+    svgEl.removeAttribute("width");
+    svgEl.removeAttribute("height");
+    svgEl.style.cssText = "width:100%;height:100%;display:block;";
+    // Click-to-select elements
+    svgEl.querySelectorAll("text, rect, image, circle, path, g[id]").forEach(el => {
+      el.style.cursor = "pointer";
+      el.addEventListener("click", e => {
+        e.stopPropagation();
+        svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
+        el.classList.add("svg-selected");
+        const label = el.id || el.tagName + (el.textContent?.trim().slice(0,30) || "");
+        state._selectedElement = label;
+        const aiInput = $("#aiInput");
+        if (aiInput && !aiInput.value) aiInput.placeholder = `Edit "${label}"…`;
+        const sidebar = $("#aiSidebar");
+        sidebar?.classList.remove("hidden");
+      });
+    });
+    // Deselect on canvas click
+    svgEl.addEventListener("click", () => {
+      svgEl.querySelectorAll(".svg-selected").forEach(s => s.classList.remove("svg-selected"));
+      state._selectedElement = null;
+    });
+  } catch (err) {
+    container.innerHTML = `<div style="color:var(--text-3);padding:40px;text-align:center">Failed to load slide</div>`;
+  }
 }
 
 /* ─── Sidebar toggle ─────────────────────────────────────────────────── */
